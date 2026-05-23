@@ -318,12 +318,14 @@ function generateSchedule() {
   }
 
   // Get tasks that need scheduling for THIS WEEK
-  // 條件：任務區間與本週有交集（task.start <= 本週日 AND task.end >= 本週一）
-  // 或無日期但有 urgency = high
+  // 條件：
+  //   1. 不是同步來的（synced 任務有自己的時間區間，由甘特圖呈現，不該塞進本週時程表）
+  //   2. 任務區間與本週有交集 或 無日期但 urgency=high
   const friday = D.addDays(monday, 4);
   const sunday = D.addDays(monday, 6);
   const candidates = DATA.tasks
     .filter(t => t.status !== 'done' && t.status !== 'hold')
+    .filter(t => !t.synced) // 同步任務不參與本週智慧排程
     .filter(t => {
       // 1. 沒日期但是高緊急度的任務 → 排
       if (!t.start && !t.end) {
@@ -341,12 +343,21 @@ function generateSchedule() {
   // Schedule items
   const items = [...lockedItems];
 
+  // 每個任務最多佔本週 3 個 slot，避免 150h 任務霸佔整個時程表
+  const MAX_CHUNKS_PER_TASK = 3;
+
   for (const task of sorted) {
     let hoursNeeded = parseFloat(task.estHours) || 1;
     const isDeep = task.category === 'deep' || !task.category;
     const canSplit = (task.canSplit !== false) && hoursNeeded >= splitThreshold;
-    const chunks = canSplit ? Math.ceil(hoursNeeded / 2) : 1;
-    const hoursPerChunk = canSplit ? hoursNeeded / chunks : hoursNeeded;
+    // 切分 chunks：最多 3 段，每段最多 2h
+    let chunks;
+    if (canSplit) {
+      chunks = Math.min(MAX_CHUNKS_PER_TASK, Math.ceil(hoursNeeded / 2));
+    } else {
+      chunks = 1;
+    }
+    const hoursPerChunk = Math.min(canSplit ? hoursNeeded / chunks : hoursNeeded, 2);
 
     let placed = 0;
     // try golden slots first for deep work
@@ -363,6 +374,8 @@ function generateSchedule() {
         start: slot.start,
         duration: Math.min(hoursPerChunk, 1) * 60,
         chunk: chunks > 1 ? `${i + 1}/${chunks}` : null,
+        // 標記任務總工時，UI 可以顯示「本週只排 3h / 共需 150h」
+        totalHours: hoursNeeded,
         week: weekKey,
         locked: false,
       });
@@ -414,6 +427,30 @@ const Sync = {
 
       // Add new tasks from sheet
       for (const row of data.tasks) {
+        // ─── 即時狀態判定邏輯 ───
+        // 1. 有「實際完成日」 → 強制狀態 = 已完成（不管 sheet 上的狀態欄）
+        // 2. 有「實際開始日」但無實際完成日 → 強制狀態 = 進行中
+        // 3. 兩者都沒有 → 用 sheet 上的狀態欄判定
+        let realStatus;
+        let realCompletedAt = null;
+        if (row.actualEnd) {
+          realStatus = 'done';
+          realCompletedAt = row.actualEnd;
+        } else if (row.actualStart) {
+          realStatus = 'wip';
+        } else {
+          realStatus = mapStatus(row.status, row.progress);
+        }
+
+        // ─── 即時日期判定邏輯 ───
+        // 有實際開始日 → 用實際的，否則用預計的
+        // 有實際完成日 → 用實際的，否則用預計的
+        const effectiveStart = row.actualStart || row.plannedStart || '';
+        const effectiveEnd   = row.actualEnd   || row.plannedEnd   || '';
+
+        // 進度：已完成強制 100%
+        const realProgress = realStatus === 'done' ? 100 : parseFloat(row.progress || 0);
+
         const task = {
           id: `sync_${jProj.id}_${row.n}`,
           project: jProj.id,
@@ -422,18 +459,20 @@ const Sync = {
           name: row.name || `任務 ${row.n}`,
           desc: row.stage ? `${row.stage} / ${row.subgroup || ''}` : (row.subgroup || ''),
           owner: row.owner || '',
-          start: row.plannedStart || '',
-          end: row.plannedEnd || '',
+          start: effectiveStart,           // 用實際的覆蓋預計
+          end: effectiveEnd,                // 用實際的覆蓋預計
+          plannedStart: row.plannedStart || '', // 保留預計日期供顯示
+          plannedEnd: row.plannedEnd || '',
           actualStart: row.actualStart || '',
           actualEnd: row.actualEnd || '',
           estHours: parseFloat(row.workdays || 0) * 6 || 4,
           category: row.type === '里程碑' ? 'meeting' : 'deep',
           urgency: deduceUrgency(row),
-          status: mapStatus(row.status, row.progress),
-          progress: parseFloat(row.progress || 0),
+          status: realStatus,
+          progress: realProgress,
           note: row.note || '',
-          locked: true, // synced items can't be edited
-          completedAt: row.actualEnd || null,
+          locked: true,
+          completedAt: realCompletedAt,
         };
         DATA.tasks.push(task);
       }
@@ -1276,7 +1315,11 @@ App.generateGlobalSchedule = function() {
 // ═══════════════════════════════════════════════════════
 App.quickAddTask = function(projId, input) {
   const name = input.value.trim();
-  if (!name) return;
+  if (!name) {
+    // Input 是空 → 直接打開完整新增任務對話框
+    this.openNewTaskDialog(projId);
+    return;
+  }
   const task = {
     id: U.id(),
     project: projId,
@@ -1299,6 +1342,120 @@ App.quickAddTask = function(projId, input) {
   input.value = '';
   this.renderProject();
   this.renderSidebar();
+  U.toast(`✓ 已新增「${name}」`);
+};
+
+// 完整新增任務對話框（含日期、緊急度等所有欄位）
+App.openNewTaskDialog = function(projId) {
+  const projectOptions = DATA.projects.filter(p => !p.synced).map(p =>
+    `<option value="${p.id}" ${projId === p.id ? 'selected' : ''}>${U.esc(p.name)}</option>`
+  ).join('');
+
+  const today = D.fmt(D.today(), 'iso');
+
+  this.openModal({
+    title: '新增任務',
+    body: `
+      <div class="form-field">
+        <label>任務名稱 *</label>
+        <input type="text" id="tf-name" placeholder="例：完成 BOM 表 6 型壁掛機">
+      </div>
+      <div class="form-field">
+        <label>說明</label>
+        <textarea id="tf-desc" placeholder="任務詳細說明（選填）"></textarea>
+      </div>
+      <div class="form-field">
+        <label>所屬專案</label>
+        <select id="tf-project">${projectOptions}</select>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>擔當</label><input type="text" id="tf-owner" value="${U.esc(DATA.settings.userName || '')}"></div>
+        <div class="form-field"><label>分類</label>
+          <select id="tf-category">
+            <option value="deep" selected>🌳 深度工作</option>
+            <option value="admin">📋 雜事零碎</option>
+            <option value="meeting">📅 會議</option>
+            <option value="other">·  其他</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>緊急程度</label>
+          <select id="tf-urgency">
+            <option value="high">🔴 緊急</option>
+            <option value="medium" selected>🟡 普通</option>
+            <option value="low">🟢 不急</option>
+          </select>
+        </div>
+        <div class="form-field"><label>狀態</label>
+          <select id="tf-status">
+            <option value="pending" selected>未開始</option>
+            <option value="wip">進行中</option>
+            <option value="done">已完成</option>
+            <option value="hold">擱置中</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>預計開始</label><input type="date" id="tf-start" value="${today}"></div>
+        <div class="form-field"><label>預計完成 / Deadline</label><input type="date" id="tf-end"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>預估工時 (h)</label><input type="number" id="tf-hours" value="1" min="0.5" step="0.5"></div>
+        <div class="form-field"><label>處理方式</label><input type="text" id="tf-method" placeholder="會議/郵件/現場"></div>
+      </div>
+      <div class="form-field">
+        <label>備註</label>
+        <input type="text" id="tf-note">
+      </div>
+      <div class="form-field">
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="tf-split" checked style="width:auto;">
+          可切分（≥4h 任務拆成多天）
+        </label>
+      </div>
+    `,
+    footer: `
+      <button class="tb-action ghost" onclick="App.closeModal()">取消</button>
+      <button class="tb-action" onclick="App.saveNewTask('${projId}')">建立任務</button>
+    `,
+  });
+  // Auto-focus on name field
+  setTimeout(() => {
+    const nameField = document.getElementById('tf-name');
+    if (nameField) nameField.focus();
+  }, 50);
+};
+
+App.saveNewTask = function(projId) {
+  const name = document.getElementById('tf-name').value.trim();
+  if (!name) { U.toast('⚠ 請填任務名稱', 'warning'); return; }
+
+  const status = document.getElementById('tf-status').value;
+  const task = {
+    id: U.id(),
+    project: document.getElementById('tf-project').value || projId,
+    name,
+    desc: document.getElementById('tf-desc').value.trim(),
+    owner: document.getElementById('tf-owner').value.trim(),
+    category: document.getElementById('tf-category').value,
+    urgency: document.getElementById('tf-urgency').value,
+    status,
+    start: document.getElementById('tf-start').value,
+    end: document.getElementById('tf-end').value,
+    estHours: parseFloat(document.getElementById('tf-hours').value) || 1,
+    method: document.getElementById('tf-method').value.trim(),
+    note: document.getElementById('tf-note').value.trim(),
+    canSplit: document.getElementById('tf-split').checked,
+    completedAt: status === 'done' ? new Date().toISOString() : null,
+    createdAt: new Date().toISOString(),
+  };
+
+  DATA.tasks.push(task);
+  Storage.save();
+  this.closeModal();
+  this.refreshAll();
+  U.toast(`✓ 已新增「${name}」`);
 };
 
 App.toggleTaskDone = function(id) {
@@ -1340,15 +1497,15 @@ App.openTaskModal = function(id) {
           <div class="form-field"><label>進度</label><div style="padding:8px 0; font-weight:600;">${t.progress || 0}%</div></div>
         </div>
         <div class="form-row">
-          <div class="form-field"><label>預計開始</label><div style="padding:8px 0; font-family:var(--mono);">${t.start ? D.fmt(t.start, 'ymdShort') : '—'}</div></div>
-          <div class="form-field"><label>預計完成</label><div style="padding:8px 0; font-family:var(--mono);">${t.end ? D.fmt(t.end, 'ymdShort') : '—'}</div></div>
+          <div class="form-field"><label>預計開始</label><div style="padding:8px 0; font-family:var(--mono); ${t.actualStart ? 'color:var(--ink4); text-decoration:line-through;' : ''}">${t.plannedStart ? D.fmt(t.plannedStart, 'ymdShort') : '—'}</div></div>
+          <div class="form-field"><label>預計完成</label><div style="padding:8px 0; font-family:var(--mono); ${t.actualEnd ? 'color:var(--ink4); text-decoration:line-through;' : ''}">${t.plannedEnd ? D.fmt(t.plannedEnd, 'ymdShort') : '—'}</div></div>
         </div>
         ${t.actualStart || t.actualEnd ? `
         <div class="form-row">
-          <div class="form-field"><label>實際開始</label><div style="padding:8px 0; font-family:var(--mono);">${t.actualStart ? D.fmt(t.actualStart, 'ymdShort') : '—'}</div></div>
-          <div class="form-field"><label>實際完成</label><div style="padding:8px 0; font-family:var(--mono);">${t.actualEnd ? D.fmt(t.actualEnd, 'ymdShort') : '—'}</div></div>
+          <div class="form-field"><label>實際開始</label><div style="padding:8px 0; font-family:var(--mono); color:var(--sage-700); font-weight:600;">${t.actualStart ? D.fmt(t.actualStart, 'ymdShort') : '—'}</div></div>
+          <div class="form-field"><label>實際完成</label><div style="padding:8px 0; font-family:var(--mono); color:var(--sage-700); font-weight:600;">${t.actualEnd ? D.fmt(t.actualEnd, 'ymdShort') : '—'}</div></div>
         </div>` : ''}
-        <div class="form-field"><label>狀態</label><div style="padding:8px 0;">${LABELS.status[t.status] || t.status}</div></div>
+        <div class="form-field"><label>狀態</label><div style="padding:8px 0;">${LABELS.status[t.status] || t.status}${t.actualEnd ? ' ✓（依實際完成日判定）' : t.actualStart ? '（依實際開始日判定）' : ''}</div></div>
       `,
       footer: '<button class="tb-action ghost" onclick="App.closeModal()">關閉</button>',
     });
