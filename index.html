@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,14 +18,30 @@
   <div class="login-box">
     <div class="login-logo">PM-Workspace</div>
     <div class="login-sub">Personal Task Board</div>
-    <div class="login-form">
-      <input type="password" id="loginPw" placeholder="輸入編輯密碼">
-      <button onclick="App.doLogin()">登入並編輯</button>
+
+    <!-- Google login mode (preferred) -->
+    <div id="loginGoogleMode">
+      <div class="login-google-hint">使用 Google 帳號登入</div>
+      <div id="gSignInBtn" style="display:flex; justify-content:center; margin-bottom: 14px;"></div>
+      <div class="login-divider"><span>或</span></div>
+      <button class="login-view-only" onclick="App.enterViewOnly()">👁 不登入，僅檢視</button>
+      <div class="login-hint" id="googleSetupHint" style="display:none;">
+        💡 尚未設定 Google OAuth Client ID。可<br>
+        <a href="#" onclick="App.enterViewOnly(); setTimeout(()=>App.showPage('settings', document.querySelector('[data-page=settings]')), 100); return false;" style="color:var(--sage-600);">先以檢視模式進入，到設定頁填寫</a>
+      </div>
     </div>
-    <div class="login-hint">
-      首次使用：直接按「登入並編輯」設定密碼（可在設定頁更改）
+
+    <!-- Password fallback mode -->
+    <div id="loginPwMode" style="display:none;">
+      <div class="login-form">
+        <input type="password" id="loginPw" placeholder="輸入編輯密碼">
+        <button onclick="App.doLogin()">登入並編輯</button>
+      </div>
+      <div class="login-hint">
+        首次使用：直接按「登入並編輯」設定密碼（可在設定頁更改）
+      </div>
+      <button class="login-view-only" onclick="App.enterViewOnly()">👁 不登入，僅檢視</button>
     </div>
-    <button class="login-view-only" onclick="App.enterViewOnly()">👁 不登入，僅檢視</button>
   </div>
 </div>
 
@@ -119,7 +136,7 @@
 </div>
 
 <!-- ─── MODAL CONTAINER ─── -->
-<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)App.closeModal()">
+<div class="modal-overlay" id="modalOverlay">
   <div class="modal" id="modal"></div>
 </div>
 

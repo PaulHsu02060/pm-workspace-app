@@ -81,6 +81,24 @@ button { cursor: pointer; }
 }
 .login-view-only:hover { background: var(--stone-100); }
 
+.login-google-hint { font-size: 12px; color: var(--ink3); margin-bottom: 12px; }
+.login-divider {
+  text-align: center; margin: 14px 0 12px; position: relative;
+  color: var(--ink4); font-size: 11px;
+}
+.login-divider::before, .login-divider::after {
+  content: ""; position: absolute; top: 50%; width: 38%; height: 1px; background: var(--rule);
+}
+.login-divider::before { left: 0; }
+.login-divider::after { right: 0; }
+.login-divider span { background: var(--paper); padding: 0 8px; position: relative; z-index: 1; }
+
+.login-error {
+  margin-top: 12px; padding: 10px 12px; background: var(--terracotta-l);
+  border-left: 3px solid var(--terracotta); border-radius: var(--r6);
+  font-size: 12px; color: #8B3A1D; line-height: 1.5; text-align: left;
+}
+
 /* ─── APP SHELL ─── */
 .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
 
@@ -229,6 +247,26 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
 .card-title { font-family: var(--sans); font-weight: 600; font-size: 16px; color: var(--ink); }
 .card-sub { font-size: 11px; color: var(--ink3); font-family: var(--mono); margin-left: auto; }
+
+.week-nav-mini {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: 14px;
+}
+.week-nav-mini .rw-arrow {
+  padding: 4px 8px; background: var(--surface2);
+  border: 1px solid var(--rule); border-radius: var(--r6);
+  font-size: 11px; color: var(--ink2); min-width: 26px;
+  cursor: pointer;
+}
+.week-nav-mini .rw-arrow:hover { background: var(--stone-100); }
+.rw-select-mini {
+  padding: 4px 8px; border: 1px solid var(--rule);
+  border-radius: var(--r6); background: var(--surface);
+  font-size: 11.5px; color: var(--ink); outline: none;
+  font-family: var(--mono); min-width: 220px; font-weight: 500;
+  cursor: pointer;
+}
+.rw-select-mini:focus { border-color: var(--sage-500); }
 
 /* ─── DASHBOARD GRID ─── */
 .dash-grid { display: grid; grid-template-columns: 1fr 280px; gap: 22px; }

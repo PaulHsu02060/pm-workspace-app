@@ -33,6 +33,9 @@ const DEFAULT_SETTINGS = {
   jSheetUrl: '',
   syncTimes: ['09:00', '14:00'],
   autoSyncEnabled: false,
+  // Google OAuth 白名單（只有這些 Gmail 登入後才能編輯）
+  allowedEmails: ['shengyao1003@gmail.com'],
+  googleClientId: '', // 由使用者在設定頁填入
 };
 
 // ─── COLORS FOR PROJECTS ───────────────────────────────
@@ -64,6 +67,21 @@ const Storage = {
       DATA.schedule  = JSON.parse(localStorage.getItem(STORE.schedule)  || '{"week":null,"items":[]}');
       DATA.settings  = { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem(STORE.settings) || '{}')) };
       DATA.weekNotes = JSON.parse(localStorage.getItem(STORE.weekNotes) || '{}');
+
+      // ─── 自動清掉「同步任務」殘留在 schedule 的舊資料 ───
+      // 新邏輯：synced 任務不參與本週智慧排程，但舊版本資料可能殘留
+      if (DATA.schedule && Array.isArray(DATA.schedule.items)) {
+        const before = DATA.schedule.items.length;
+        DATA.schedule.items = DATA.schedule.items.filter(it => {
+          const task = DATA.tasks.find(t => t.id === it.taskId);
+          // 找不到任務，或任務是同步來的 → 從 schedule 移除
+          return task && !task.synced;
+        });
+        if (before !== DATA.schedule.items.length) {
+          console.log(`Cleaned ${before - DATA.schedule.items.length} stale synced schedule items`);
+          localStorage.setItem(STORE.schedule, JSON.stringify(DATA.schedule));
+        }
+      }
     } catch(e) { console.error('Load failed', e); }
   },
   save() {
@@ -582,7 +600,17 @@ const App = {
   refreshUserBadge() {
     const name = DATA.settings.userName || '使用者';
     document.getElementById('userName').textContent = name;
-    document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+    const avatar = document.getElementById('userAvatar');
+    const picture = DATA.settings._loggedInPicture;
+    if (picture) {
+      avatar.textContent = '';
+      avatar.style.backgroundImage = `url('${picture}')`;
+      avatar.style.backgroundSize = 'cover';
+      avatar.style.backgroundPosition = 'center';
+    } else {
+      avatar.style.backgroundImage = '';
+      avatar.textContent = name.charAt(0).toUpperCase();
+    }
   },
 
   updateWeekInfo() {
@@ -594,26 +622,100 @@ const App = {
 
   // ─── LOGIN ───
   checkLoginState() {
-    const hasPw = localStorage.getItem(STORE.password);
-    if (!hasPw) {
-      // First time, no password set
-      const overlay = document.getElementById('loginOverlay');
-      const hint = overlay.querySelector('.login-hint');
-      if (hint) hint.innerHTML = '<b>首次使用</b>：請設定一組編輯密碼<br>之後拿到 URL 的人需要密碼才能編輯';
-      const input = document.getElementById('loginPw');
-      input.placeholder = '設定密碼（之後可改）';
+    const clientId = DATA.settings.googleClientId;
+    const pwMode = document.getElementById('loginPwMode');
+    const googleMode = document.getElementById('loginGoogleMode');
+    const googleSetupHint = document.getElementById('googleSetupHint');
+
+    if (clientId) {
+      // Google OAuth mode
+      googleMode.style.display = '';
+      pwMode.style.display = 'none';
+      googleSetupHint.style.display = 'none';
+      // Render Google sign-in button when API is ready
+      this.initGoogleSignIn(clientId);
+    } else {
+      // No Google client id configured yet → show password fallback OR hint
+      googleMode.style.display = '';
+      pwMode.style.display = 'none';
+      // Show only "view only" + hint to set up Google OAuth
+      googleSetupHint.style.display = '';
+      const btn = document.getElementById('gSignInBtn');
+      if (btn) btn.style.display = 'none';
     }
   },
 
+  initGoogleSignIn(clientId) {
+    const tryInit = () => {
+      if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+        setTimeout(tryInit, 200);
+        return;
+      }
+      try {
+        google.accounts.id.initialize({
+          client_id: clientId,
+          callback: (resp) => App.handleGoogleCredential(resp),
+        });
+        const btnEl = document.getElementById('gSignInBtn');
+        if (btnEl) {
+          btnEl.style.display = '';
+          btnEl.innerHTML = ''; // clear
+          google.accounts.id.renderButton(btnEl, {
+            theme: 'outline',
+            size: 'large',
+            width: 280,
+            text: 'signin_with',
+            shape: 'rectangular',
+          });
+        }
+      } catch (e) {
+        console.error('Google sign-in init failed', e);
+        U.toast('❌ Google 登入初始化失敗：' + e.message, 'error');
+      }
+    };
+    tryInit();
+  },
+
+  handleGoogleCredential(resp) {
+    try {
+      // Decode JWT payload (no verify needed for client-side, Google has issued it)
+      const parts = resp.credential.split('.');
+      const payload = JSON.parse(decodeURIComponent(escape(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))));
+      const email = (payload.email || '').toLowerCase();
+      const name = payload.name || payload.given_name || 'User';
+      const picture = payload.picture || '';
+
+      const allowed = (DATA.settings.allowedEmails || []).map(e => String(e).toLowerCase());
+      if (allowed.length > 0 && !allowed.includes(email)) {
+        // 不在白名單 → 直接進檢視模式 + 提示
+        this.enterViewOnly();
+        U.toast(`⚠ ${email} 不在白名單，僅可檢視。如需編輯權限，請聯絡管理員。`, 'warning');
+        return;
+      }
+
+      // 通過 → 編輯模式
+      DATA.settings.userName = name;
+      DATA.settings._loggedInEmail = email;
+      DATA.settings._loggedInPicture = picture;
+      Storage.save();
+      this.refreshUserBadge();
+      document.body.classList.remove('viewonly');
+      document.getElementById('loginOverlay').classList.add('hidden');
+      U.toast(`✓ 歡迎 ${name}`);
+    } catch (e) {
+      console.error('Login failed', e);
+      U.toast('❌ 登入失敗：' + e.message, 'error');
+    }
+  },
+
+  // ─── LEGACY PASSWORD LOGIN (備援) ───
   doLogin() {
     const input = document.getElementById('loginPw');
-    const entered = input.value.trim();
+    const entered = input ? input.value.trim() : '';
     const stored = localStorage.getItem(STORE.password);
 
     if (!stored) {
-      // First time - set password
       if (!entered) {
-        // Allow empty password
         localStorage.setItem(STORE.password, '');
       } else {
         localStorage.setItem(STORE.password, U.hash(entered).toString());
@@ -622,7 +724,6 @@ const App = {
       document.getElementById('loginOverlay').classList.add('hidden');
       U.toast(entered ? '✓ 密碼已設定' : '✓ 已登入（未設密碼）');
     } else {
-      // Has password, verify
       const enteredHash = entered ? U.hash(entered).toString() : '';
       if (stored === '' || enteredHash === stored) {
         document.body.classList.remove('viewonly');
@@ -723,26 +824,28 @@ const App = {
 //  PAGE: DASHBOARD
 // ═══════════════════════════════════════════════════════
 App.renderDashboard = function() {
-  const wk = D.weekKey();
-  const weekRange = D.weekRange();
-  const monday = D.monday();
-  const today = D.today();
+  // Week offset: 0 = 本週, -1 = 上週, +1 = 下週...
+  if (typeof this.dashboardWeekOffset !== 'number') this.dashboardWeekOffset = 0;
 
-  // ─── Filter: 前後兩週內該做的事 ───
-  // 顯示條件：任務的「日期區間」與「前後兩週」有交集
-  // 即：task.start <= twoWeeksAfter AND task.end >= twoWeeksBefore
-  const twoWeeksBefore = D.addDays(today, -14);
-  const twoWeeksAfter  = D.addDays(today, +14);
+  const today = D.today();
+  const baseMonday = D.monday(today);
+  const monday = D.addDays(baseMonday, this.dashboardWeekOffset * 7);
+  const sunday = D.addDays(monday, 6);
+  const wk = D.weekKey(monday);
+  const wkNum = D.weekNum(monday);
+
+  // ─── Filter: 顯示週的「前後兩週」內該做的事 ───
+  // 以「顯示週的週中」為中心，前後兩週的視窗
+  const centerDay = D.addDays(monday, 3); // 週四為中心
+  const twoWeeksBefore = D.addDays(centerDay, -14);
+  const twoWeeksAfter  = D.addDays(centerDay, +14);
 
   const inWindowTasks = DATA.tasks.filter(t => {
     if (t.status === 'done' || t.status === 'hold') return false;
-    // 沒有日期的任務一律顯示（本地任務通常沒填日期）
     if (!t.start && !t.end) return true;
-    // 有任一日期就用日期判斷
     const ts = t.start ? new Date(t.start) : (t.end ? new Date(t.end) : null);
     const te = t.end   ? new Date(t.end)   : (t.start ? new Date(t.start) : null);
     if (!ts || !te) return true;
-    // 任務區間與 [-14, +14] 視窗有交集
     return te >= twoWeeksBefore && ts <= twoWeeksAfter;
   });
 
@@ -759,8 +862,29 @@ App.renderDashboard = function() {
     .reduce((s, it) => s + (it.duration / 60), 0);
   const availableHours = DATA.settings.dailyHours * DATA.settings.workDays.length;
 
-  // Week schedule build
-  const scheduleHtml = this.buildWeekScheduleHtml();
+  // Week schedule (uses dashboardWeekOffset)
+  const scheduleHtml = this.buildWeekScheduleHtml(monday);
+
+  // Week label
+  let weekLabelSuffix = '';
+  if (this.dashboardWeekOffset === 0) weekLabelSuffix = '（本週）';
+  else if (this.dashboardWeekOffset === -1) weekLabelSuffix = '（上週）';
+  else if (this.dashboardWeekOffset === 1) weekLabelSuffix = '（下週）';
+  else if (this.dashboardWeekOffset < 0) weekLabelSuffix = `（${-this.dashboardWeekOffset} 週前）`;
+  else weekLabelSuffix = `（${this.dashboardWeekOffset} 週後）`;
+
+  // Week selector dropdown (±8 weeks)
+  const weekOpts = [];
+  for (let off = -8; off <= 8; off++) {
+    const m = D.addDays(baseMonday, off * 7);
+    const e = D.addDays(m, 6);
+    const num = D.weekNum(m);
+    let suffix = '';
+    if (off === -1) suffix = '（上週）';
+    else if (off === 0) suffix = '（本週）';
+    else if (off === 1) suffix = '（下週）';
+    weekOpts.push(`<option value="${off}" ${off === this.dashboardWeekOffset ? 'selected' : ''}>W${num}  ${D.fmt(m, 'ymd')} – ${D.fmt(e, 'md')}${suffix}</option>`);
+  }
 
   // Stats row
   const statsHtml = `<div class="stats-row">
@@ -779,7 +903,7 @@ App.renderDashboard = function() {
     </div>
     <div class="stat">
       <div class="stat-num">${Math.round(totalHours)}h</div>
-      <div class="stat-label">本週工時 / ${availableHours}h</div>
+      <div class="stat-label">${this.dashboardWeekOffset === 0 ? '本週' : 'W'+wkNum} 工時 / ${availableHours}h</div>
     </div>
   </div>`;
 
@@ -800,8 +924,15 @@ App.renderDashboard = function() {
       <div>
         <div class="card" style="padding-bottom:14px;">
           <div class="card-head">
-            <div class="card-title">本週時程表</div>
-            <div class="card-sub">${D.fmt(weekRange.start, 'ymd')} – ${D.fmt(weekRange.end, 'md')}</div>
+            <div class="card-title">時程表</div>
+            <div class="week-nav-mini">
+              <button class="rw-arrow" onclick="App.dashboardWeekShift(-1)" title="上一週">‹</button>
+              <select class="rw-select-mini" onchange="App.dashboardWeekOffset = parseInt(this.value); App.renderDashboard();">
+                ${weekOpts.join('')}
+              </select>
+              <button class="rw-arrow" onclick="App.dashboardWeekShift(1)" title="下一週">›</button>
+              ${this.dashboardWeekOffset !== 0 ? `<button class="rw-arrow" onclick="App.dashboardWeekOffset=0; App.renderDashboard();" title="回到本週" style="background: var(--sage-50); color: var(--sage-700);">今</button>` : ''}
+            </div>
             <div class="tabs" style="margin-left:auto">
               <button class="tab-btn active">週視圖</button>
               <button class="tab-btn" onclick="App.showPage('gantt', document.querySelector('[data-page=gantt]'))">甘特圖</button>
@@ -823,9 +954,14 @@ App.renderDashboard = function() {
   this.attachMemoDrag();
 };
 
-App.buildWeekScheduleHtml = function() {
-  const monday = D.monday();
-  const wk = D.weekKey();
+App.dashboardWeekShift = function(delta) {
+  this.dashboardWeekOffset = (this.dashboardWeekOffset || 0) + delta;
+  this.renderDashboard();
+};
+
+App.buildWeekScheduleHtml = function(targetMonday) {
+  const monday = targetMonday || D.monday();
+  const wk = D.weekKey(monday);
   const today = D.today();
   const wd = ['一','二','三','四','五'];
 
@@ -2668,10 +2804,47 @@ App.renderSettings = function() {
         </div>
       </div>
 
-      <!-- Password -->
+      <!-- Google OAuth + 白名單 -->
       <div class="settings-section">
-        <div class="ss-title">🔒 編輯密碼</div>
-        <div class="ss-desc">防止拿到 URL 的人隨意修改</div>
+        <div class="ss-title">🔐 Google 登入 + 白名單</div>
+        <div class="ss-desc">用 Google 帳號登入，只有白名單內的 Gmail 能編輯，其他人僅可檢視</div>
+
+        ${s._loggedInEmail ? `
+        <div class="sync-status" style="margin-bottom:14px;">
+          <div class="sync-pulse"></div>
+          <div class="sync-status-text">
+            目前登入：<b>${U.esc(s._loggedInEmail)}</b>
+          </div>
+          <button class="tb-action ghost" onclick="App.googleSignOut()" style="font-size:11px; padding:4px 10px;">登出</button>
+        </div>` : ''}
+
+        <div class="ss-field">
+          <label>Google OAuth Client ID</label>
+          <div>
+            <input type="text" id="set-gci" value="${U.esc(s.googleClientId || '')}" placeholder="123456789012-abc...apps.googleusercontent.com" style="font-family:var(--mono); font-size:11px;">
+            <div class="help">
+              到 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color:var(--sage-600);">Google Cloud Console</a> 建立 OAuth 2.0 Client ID（Web application 類型）<br>
+              授權的 JavaScript 來源加入：<code style="background:var(--surface2); padding:1px 5px; border-radius:3px;">https://paulhsu02060.github.io</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="ss-field">
+          <label>白名單 Gmail</label>
+          <div>
+            <textarea id="set-whitelist" rows="3" style="width:100%; font-family:var(--mono); font-size:12px; padding:8px 10px; border:1px solid var(--rule); border-radius:var(--r8); background:var(--surface2); outline:none; resize:vertical;" placeholder="一行一個 email">${(s.allowedEmails || []).join('\n')}</textarea>
+            <div class="help">
+              一行一個 email，列在這的人才能編輯。空白 = 任何 Google 帳號都可編輯（不建議）<br>
+              <b>提醒：</b>純前端白名單僅作軟性管控，無法完全阻止有心人，但能避免誤觸
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Password fallback -->
+      <div class="settings-section">
+        <div class="ss-title">🔒 編輯密碼（備援）</div>
+        <div class="ss-desc">若無法設定 Google OAuth，可改用密碼登入</div>
 
         <div class="ss-field">
           <label>新密碼</label>
@@ -2739,9 +2912,28 @@ App.saveSettings = function() {
   DATA.settings.department = document.getElementById('set-dept').value.trim();
   DATA.settings.doneRetentionDays = parseInt(document.getElementById('set-retention').value);
 
+  // Google OAuth + whitelist
+  const gciEl = document.getElementById('set-gci');
+  if (gciEl) DATA.settings.googleClientId = gciEl.value.trim();
+  const wlEl = document.getElementById('set-whitelist');
+  if (wlEl) {
+    DATA.settings.allowedEmails = wlEl.value.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
+  }
+
   Storage.save();
   this.refreshUserBadge();
   U.toast('✓ 設定已儲存');
+};
+
+App.googleSignOut = function() {
+  if (!confirm('確定要登出？')) return;
+  DATA.settings._loggedInEmail = '';
+  DATA.settings._loggedInPicture = '';
+  Storage.save();
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+  location.reload();
 };
 
 App.saveAndSync = function() {
