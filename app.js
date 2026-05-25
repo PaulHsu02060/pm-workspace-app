@@ -3280,190 +3280,247 @@ App.saveWeekNote = function(weekKey, text) {
   Storage.save();
 };
 
-App.exportReportExcel = function(weekKey) {
-  // Find monday/sunday for the week
-  const m = weekKey.match(/W(\d+)-(\d+)/);
-  if (!m) return;
-  const wk = parseInt(m[1]), yr = parseInt(m[2]);
-  const jan4 = new Date(yr, 0, 4);
-  const jan4Day = (jan4.getDay() + 6) % 7;
-  const w1Monday = D.addDays(jan4, -jan4Day);
-  const monday = D.addDays(w1Monday, (wk - 1) * 7);
-  const sunday = D.addDays(monday, 6);
-
-  // Gather tasks (strict per-week)
-  const weekEnd = D.addDays(sunday, 1);
-  const inWeekTasks = DATA.tasks.filter(t => {
-    if (t._deleted) return false;
-    if (t.status === 'done' && t.completedAt) {
-      const cd = new Date(t.completedAt);
-      return cd >= monday && cd < weekEnd;
-    }
-    if (t.status === 'done' && t.actualEnd) {
-      const ad = new Date(t.actualEnd);
-      return ad >= monday && ad < weekEnd;
-    }
-    if (t.status !== 'done' && t.status !== 'hold') {
-      const ts = t.start ? new Date(t.start) : (t.end ? new Date(t.end) : null);
-      const te = t.end   ? new Date(t.end)   : (t.start ? new Date(t.start) : null);
-      if (!ts || !te) return false;
-      return te >= monday && ts <= sunday;
-    }
-    return false;
-  });
-
-  // Group by project (preserve project order)
-  const projectGroups = {};
-  const projOrder = [];
-  for (const t of inWeekTasks) {
-    if (!projectGroups[t.project]) {
-      projectGroups[t.project] = [];
-      projOrder.push(t.project);
-    }
-    projectGroups[t.project].push(t);
+App.exportReportExcel = async function(weekKey, opts) {
+  opts = opts || {};
+  // weekKey 可為單一週 ("W22-2026") 或 'all' (匯出所有有任務的週)
+  if (typeof ExcelJS === 'undefined') {
+    U.toast('❌ ExcelJS 函式庫未載入，請檢查 index.html 的 CDN', 'error');
+    return;
   }
 
-  // Build the weekly report sheet matching company format
-  // 欄位：專案名稱 | 項次 | 議題項目 | 狀態 | 本周工作預計項目/對策 | 預計完成日 | 實際完成日 | 延誤理由 | 負責人 | 備註
-  const headerRow = ['專案名稱', '項次', '議題項目', '狀態', '本周工作預計項目/對策', '預計完成日', '實際完成日', '延誤理由(有延誤才填寫)', '負責人', '備註'];
-  const data = [headerRow];
-
-  // Helper: format date (returns Date for date cells, or 原日期\n-> 展延日期 string)
-  function fmtPlanEnd(t) {
-    const planned = t.plannedEnd || t.plannedStart || '';
-    const eff = t.end || '';
-    if (planned && eff && planned !== eff) {
-      // Has extension marker
-      return `${D.fmt(planned, 'ymd')}\n-> ${D.fmt(eff, 'ymd')}`;
-    }
-    return eff ? D.fmt(eff, 'ymd') : '';
+  // ── helpers ─────────────────────────────────────────────
+  function weekKeyToRange(wk) {
+    const m = wk.match(/W(\d+)-(\d+)/);
+    if (!m) return null;
+    const wkNum = parseInt(m[1]), yr = parseInt(m[2]);
+    const jan4 = new Date(yr, 0, 4);
+    const jan4Day = (jan4.getDay() + 6) % 7;
+    const w1Monday = D.addDays(jan4, -jan4Day);
+    const monday = D.addDays(w1Monday, (wkNum - 1) * 7);
+    const sunday = D.addDays(monday, 6);
+    return { monday, sunday };
   }
 
-  // Helper: get status text from internal status
   function statusText(t) {
     if (t.status === 'done') return '完成';
     if (t.status === 'hold') return '擱置';
     if (t.status === 'pending') return '尚未開始';
-    // wip or unknown: check if overdue
     if (t.end && new Date(t.end) < D.today()) return '延遲';
     return '進行中';
   }
 
-  // Parse delay reason from desc (if any "【延誤】" tag exists)
   function getDelayReason(t) {
     if (!t.desc) return '';
     const m = t.desc.match(/【延誤】([^\n]+)/);
-    if (m) return m[1].trim();
-    // Or if status is 延遲 but no explicit tag, use note as backup
-    return '';
+    return m ? m[1].trim() : '';
   }
 
   function getWorkDesc(t) {
     if (!t.desc) return '';
-    // strip 【延誤】xxx
     return t.desc.replace(/【延誤】[^\n]+\n?/g, '').trim() || t.name;
   }
 
-  let projIdx = 0;
-  const projRowSpans = []; // {start, end, name} for merging A column
-
-  for (const projId of projOrder) {
-    const proj = this.getProj(projId);
-    if (!proj) continue;
-    projIdx++;
-    const tasks = projectGroups[projId];
-    const startRow = data.length; // 1-indexed already including header
-    tasks.forEach((t, i) => {
-      const itemIdx = `${projIdx}-${i + 1}`;
-      data.push([
-        i === 0 ? proj.name : '',            // 專案名稱 (only first row of group)
-        itemIdx,                              // 項次
-        t.name,                               // 議題項目
-        statusText(t),                        // 狀態
-        getWorkDesc(t),                       // 本周預計
-        fmtPlanEnd(t),                        // 預計完成日
-        t.actualEnd ? D.fmt(t.actualEnd, 'ymd') : '',  // 實際完成日
-        getDelayReason(t),                    // 延誤理由
-        t.owner || '',                        // 負責人
-        t.note || '',                         // 備註
-      ]);
-    });
-    projRowSpans.push({ start: startRow, end: startRow + tasks.length - 1, name: proj.name });
-  }
-
-  const wsMain = XLSX.utils.aoa_to_sheet(data);
-
-  // Column widths matching the original Excel
-  wsMain['!cols'] = [
-    { wch: 19 },  // A: 專案名稱
-    { wch: 7.5 }, // B: 項次
-    { wch: 26 },  // C: 議題項目
-    { wch: 9.5 }, // D: 狀態
-    { wch: 50 },  // E: 本周預計
-    { wch: 14 },  // F: 預計完成
-    { wch: 13 },  // G: 實際完成
-    { wch: 40 },  // H: 延誤理由
-    { wch: 15 },  // I: 負責人
-    { wch: 12 },  // J: 備註
-  ];
-
-  // Merge cells in column A for projects with multiple tasks
-  if (!wsMain['!merges']) wsMain['!merges'] = [];
-  for (const span of projRowSpans) {
-    if (span.end > span.start) {
-      wsMain['!merges'].push({
-        s: { r: span.start, c: 0 },
-        e: { r: span.end, c: 0 },
-      });
+  // F 欄 (預計完成日)：若有展延則用 "原日期\n-> 展延" 字串；單一日期則用 Date 物件（讓 Excel 套日期格式）
+  function planEndCell(t) {
+    const planned = t.plannedEnd || '';
+    const eff = t.end || '';
+    if (planned && eff && D.fmt(planned, 'iso') !== D.fmt(eff, 'iso')) {
+      // 有展延：可能還有多段（歷史更多次展延），但目前 schema 只記一次
+      return `${D.fmt(planned, 'ymd')}\n-> ${D.fmt(eff, 'ymd')}`;
     }
+    return eff ? new Date(eff) : null;
   }
 
-  // Enable wrap text on relevant columns (E, F, H, J)
-  // Iterate all cells and set wrap
-  const range = XLSX.utils.decode_range(wsMain['!ref']);
-  for (let R = 0; R <= range.e.r; R++) {
-    for (let C = 0; C <= range.e.c; C++) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      if (!wsMain[addr]) continue;
-      wsMain[addr].s = wsMain[addr].s || {};
-      wsMain[addr].s.alignment = {
-        wrapText: true,
-        vertical: 'center',
-        horizontal: R === 0 ? 'center' : (C === 1 || C === 3 ? 'center' : 'left'),
-      };
-      // Header bold
-      if (R === 0) {
-        wsMain[addr].s.font = { bold: true };
-        wsMain[addr].s.fill = { fgColor: { rgb: 'F5F1E8' }, patternType: 'solid' };
+  function actualEndCell(t) {
+    return t.actualEnd ? new Date(t.actualEnd) : null;
+  }
+
+  // 收集每週任務
+  function gatherWeekTasks(monday, sunday) {
+    const weekEnd = D.addDays(sunday, 1);
+    return DATA.tasks.filter(t => {
+      if (t._deleted) return false;
+      if (t.status === 'done' && t.completedAt) {
+        const cd = new Date(t.completedAt);
+        return cd >= monday && cd < weekEnd;
+      }
+      if (t.status === 'done' && t.actualEnd) {
+        const ad = new Date(t.actualEnd);
+        return ad >= monday && ad < weekEnd;
+      }
+      if (t.status !== 'done' && t.status !== 'hold') {
+        const ts = t.start ? new Date(t.start) : (t.end ? new Date(t.end) : null);
+        const te = t.end   ? new Date(t.end)   : (t.start ? new Date(t.start) : null);
+        if (!ts || !te) return false;
+        return te >= monday && ts <= sunday;
+      }
+      return false;
+    });
+  }
+
+  // 決定要匯出哪些週
+  const weekKeysToExport = [];
+  if (weekKey === 'all') {
+    // 掃所有 tasks 取得所有涉及的週次
+    const wks = new Set();
+    for (const t of DATA.tasks) {
+      if (t._deleted) continue;
+      const d = t.end || t.start || t.actualEnd || t.completedAt;
+      if (d) wks.add(D.weekKey(new Date(d)));
+    }
+    weekKeysToExport.push(...Array.from(wks).sort((a, b) => {
+      const ra = weekKeyToRange(a), rb = weekKeyToRange(b);
+      return ra.monday - rb.monday;
+    }));
+  } else {
+    weekKeysToExport.push(weekKey);
+  }
+
+  if (weekKeysToExport.length === 0) {
+    U.toast('⚠ 沒有可匯出的週次', 'warning');
+    return;
+  }
+
+  // ── 建立 ExcelJS workbook ───────────────────────────────
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = DATA.settings.userName || 'PM-Workspace';
+  workbook.created = new Date();
+
+  const FONT = { name: '新細明體', size: 12 };
+  const FONT_BOLD = { name: '新細明體', size: 12, bold: true };
+  const HEADER_ROW = ['專案名稱', '項次', '議題項目', '狀態', '本周工作預計項目/對策', '預計完成日', '實際完成日', '延誤理由(有延誤才填寫)', '負責人', '備註'];
+  const COL_WIDTHS = [19.375, 7.5, 26.375, 9.5, 69.125, 14.125, 12.75, 56.5, 15.25, 5.5];
+
+  for (const wk of weekKeysToExport) {
+    const range = weekKeyToRange(wk);
+    if (!range) continue;
+    const { monday, sunday } = range;
+    const inWeekTasks = gatherWeekTasks(monday, sunday);
+    if (inWeekTasks.length === 0 && weekKeysToExport.length > 1) continue;  // 多週模式略過空週
+
+    // sheet 名稱：民國格式 e.g. 115.5.26
+    const rocYear = monday.getFullYear() - 1911;
+    const sheetName = `${rocYear}.${monday.getMonth() + 1}.${monday.getDate()}`;
+    const ws = workbook.addWorksheet(sheetName, { views: [{ state: 'normal' }] });
+
+    // 欄寬
+    ws.columns = COL_WIDTHS.map(w => ({ width: w }));
+
+    // 標題列
+    const headerRow = ws.addRow(HEADER_ROW);
+    headerRow.height = undefined;  // 讓 Excel 自動依 wrap 撐高
+    headerRow.eachCell((cell, colNum) => {
+      cell.font = FONT_BOLD;
+      cell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+    });
+
+    // 分組：依專案
+    const projectGroups = {};
+    const projOrder = [];
+    for (const t of inWeekTasks) {
+      if (!projectGroups[t.project]) {
+        projectGroups[t.project] = [];
+        projOrder.push(t.project);
+      }
+      projectGroups[t.project].push(t);
+    }
+
+    let projIdx = 0;
+    const projRowSpans = [];  // {startRow, endRow} for A column merging
+
+    for (const projId of projOrder) {
+      const proj = App.getProj(projId);
+      if (!proj) continue;
+      projIdx++;
+      const tasks = projectGroups[projId];
+      const rowStart = ws.rowCount + 1;  // 下一列要寫入的行號
+
+      tasks.forEach((t, i) => {
+        // 項次格式：多專案時用 "主-子"，單一專案用純數字
+        const itemIdx = projOrder.length > 1 ? `${projIdx}-${i + 1}` : `${i + 1}`;
+        const row = ws.addRow([
+          i === 0 ? proj.name : null,           // A 專案名稱（只在第一列）
+          itemIdx,                               // B 項次
+          t.name,                                // C 議題項目
+          statusText(t),                         // D 狀態
+          getWorkDesc(t),                        // E 本周預計
+          planEndCell(t),                        // F 預計完成日 (Date 或 String)
+          actualEndCell(t),                      // G 實際完成日 (Date 或 null)
+          getDelayReason(t),                     // H 延誤理由
+          t.owner || '',                         // I 負責人
+          t.note || '',                          // J 備註
+        ]);
+
+        // 全列共通格式
+        row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+          cell.font = FONT;
+          // 對齊：A/B/D/F/G/I/J 置中；C/E/H 左對齊
+          const centerCols = [1, 2, 4, 6, 7, 9, 10];
+          cell.alignment = {
+            wrapText: true,
+            vertical: 'middle',
+            horizontal: centerCols.includes(colNum) ? 'center' : 'left',
+          };
+        });
+
+        // 特殊 number_format
+        row.getCell(2).numFmt = '@';            // 項次：文字
+        // F 欄：如果是 Date 物件用日期格式；如果是字串（有展延）就 General
+        const fCell = row.getCell(6);
+        if (fCell.value instanceof Date) fCell.numFmt = 'yyyy/mm/dd';
+        // G 欄：實際完成日
+        const gCell = row.getCell(7);
+        if (gCell.value instanceof Date) gCell.numFmt = 'yyyy/mm/dd';
+      });
+
+      const rowEnd = ws.rowCount;
+      if (tasks.length > 1) {
+        projRowSpans.push({ start: rowStart, end: rowEnd });
       }
     }
+
+    // 合併 A 欄
+    for (const span of projRowSpans) {
+      ws.mergeCells(span.start, 1, span.end, 1);
+    }
   }
 
-  // Build workbook
-  const wb = XLSX.utils.book_new();
-  // Sheet name: ROC year format like the original (e.g., "115.5.25")
-  const rocYear = monday.getFullYear() - 1911;
-  const sheetName = `${rocYear}.${monday.getMonth() + 1}.${monday.getDate()}`;
-  XLSX.utils.book_append_sheet(wb, wsMain, sheetName);
-
-  // Extra: append a notes sheet if there are week notes
-  const notes = DATA.weekNotes[weekKey];
-  if (notes) {
-    const notesData = [
-      ['📝 本週備註'],
-      [notes],
-      [],
-      ['日期', `${D.fmt(monday, 'ymd')} – ${D.fmt(sunday, 'ymd')}`],
-      ['製作人', DATA.settings.userName || ''],
-      ['部門', DATA.settings.department || ''],
-    ];
-    const wsNotes = XLSX.utils.aoa_to_sheet(notesData);
-    wsNotes['!cols'] = [{ wch: 12 }, { wch: 60 }];
-    XLSX.utils.book_append_sheet(wb, wsNotes, '備註');
+  // 額外備註 sheet（若有當週備註且只匯出單一週）
+  if (weekKey !== 'all') {
+    const notes = DATA.weekNotes && DATA.weekNotes[weekKey];
+    if (notes) {
+      const range = weekKeyToRange(weekKey);
+      const ws = workbook.addWorksheet('備註');
+      ws.columns = [{ width: 12 }, { width: 60 }];
+      ws.addRow(['📝 本週備註']).getCell(1).font = FONT_BOLD;
+      ws.addRow([notes]).getCell(1).alignment = { wrapText: true, vertical: 'top' };
+      ws.addRow([]);
+      ws.addRow(['日期', `${D.fmt(range.monday, 'ymd')} – ${D.fmt(range.sunday, 'ymd')}`]);
+      ws.addRow(['製作人', DATA.settings.userName || '']);
+      ws.addRow(['部門', DATA.settings.department || '']);
+      ws.eachRow(row => row.eachCell(c => { if (!c.font) c.font = FONT; }));
+    }
   }
 
-  const filename = `週會進度_${sheetName}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  // 下載
+  const buffer = await workbook.xlsx.writeBuffer();
+  let filename;
+  if (weekKey === 'all') {
+    filename = `週會進度_全部_${D.fmt(new Date(), 'ymd').replace(/\//g, '')}.xlsx`;
+  } else {
+    const range = weekKeyToRange(weekKey);
+    const rocYear = range.monday.getFullYear() - 1911;
+    filename = `週會進度_${rocYear}.${range.monday.getMonth() + 1}.${range.monday.getDate()}.xlsx`;
+  }
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
   U.toast(`✓ 已下載 ${filename}`);
 };
 
@@ -3793,12 +3850,12 @@ App.renderSettings = function() {
           <button class="tb-action ghost" onclick="App.backupAll()">⬇ 下載 JSON 備份</button>
           <button class="tb-action ghost" onclick="document.getElementById('restoreInput').click()">📥 上傳還原</button>
           <input type="file" id="restoreInput" accept=".json" style="display:none" onchange="App.restoreAll(this.files[0])">
-          <button class="tb-action ghost" onclick="App.openExcelImport()">📊 匯入歷史 Excel 週報</button>
+          <button class="tb-action ghost" onclick="App.openExcelImport()">📊 匯入週報 Excel</button>
           <button class="tb-action ghost" onclick="App.dedupeTasks()">🧹 清除重複任務</button>
           <button class="tb-action danger" onclick="App.clearAll()" style="margin-left:auto;">🗑 清除所有資料</button>
         </div>
         <div class="help" style="margin-top:8px;">
-          💡「匯入 Excel 週報」匯入歷史資料（J 系列自動跳過，由 Sheet 同步）<br>
+          💡「匯入週報 Excel」智慧合併：同名任務更新狀態/日期，新任務新增，PM 既有但 Excel 沒有的保留<br>
           💡「清除重複任務」把同專案 + 同任務名的舊紀錄合併到「歷史紀錄」中，只保留一筆主任務
         </div>
       </div>
@@ -4288,11 +4345,23 @@ App.changePassword = function() {
 // ─── EXCEL HISTORY IMPORT (Weekly Report) ───
 App.openExcelImport = function() {
   this.openModal({
-    title: '📊 匯入歷史 Excel 週報',
+    title: '📊 匯入週報 Excel',
     body: `
       <div style="font-size:12.5px; line-height:1.6; color:var(--ink2); margin-bottom:14px;">
-        把「週會進度」Excel 的歷史資料一次匯入。每個 sheet 視為一週，會自動建立對應的本地任務。<br>
-        <b style="color:var(--sage-700);">J 系列任務自動跳過</b>（由 Google Sheet 同步管理）
+        匯入「週會進度」Excel，<b style="color:var(--sage-700);">智慧合併</b>：
+        <br>• 同名任務（同專案 + 同議題項目）→ 更新狀態 / 日期 / 延誤理由
+        <br>• Excel 新任務 → 自動新增
+        <br>• PM-Workspace 已有但 Excel 沒有的 → <b>保留不動</b>
+      </div>
+
+      <div style="margin-bottom:14px; padding:10px 14px; background:var(--surface2); border:1px solid var(--rule); border-radius:8px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px;">
+          <input type="checkbox" id="excelImportSkipJ" style="width:16px; height:16px; cursor:pointer;">
+          <span><b>跳過 J 系列任務</b>（預設：不跳過，全部一起合併）</span>
+        </label>
+        <div style="font-size:11px; color:var(--ink3); margin-top:6px; margin-left:24px;">
+          勾起 → J 系列由 Google Sheet 同步管理 / 不勾 → Excel 為準
+        </div>
       </div>
 
       <div id="excelImportZone" style="border:2px dashed var(--rule); border-radius:10px; padding:32px; text-align:center; cursor:pointer; background:var(--surface2); transition:all .15s;">
@@ -4322,6 +4391,7 @@ App.openExcelImport = function() {
   setTimeout(() => {
     const zone = document.getElementById('excelImportZone');
     const fileInput = document.getElementById('excelImportFile');
+    const skipJBox = document.getElementById('excelImportSkipJ');
     if (!zone || !fileInput) return;
 
     zone.addEventListener('click', () => fileInput.click());
@@ -4336,6 +4406,19 @@ App.openExcelImport = function() {
     fileInput.addEventListener('change', e => {
       if (e.target.files.length) App.parseExcelImport(e.target.files[0]);
     });
+    // checkbox 變更時，若已解析過則重新 render preview（用新 skipJ 規則）
+    if (skipJBox) {
+      skipJBox.addEventListener('change', () => {
+        if (App._excelParsedRows && App._excelParsedRows.length) {
+          // 重新計算 skipped 旗標
+          const skipJ = skipJBox.checked;
+          for (const r of App._excelParsedRows) {
+            r.skipped = skipJ && r.projDisplay.includes('J系列');
+          }
+          App.renderExcelImportPreview();
+        }
+      });
+    }
   }, 50);
 };
 
@@ -4429,7 +4512,7 @@ App.parseExcelImport = async function(file) {
           delayReason: delay ? String(delay).trim() : '',
           owner: owner ? String(owner).trim() : '',
           note: note ? String(note).trim() : '',
-          skipped: projDisplay.includes('J系列'),
+          skipped: (document.getElementById('excelImportSkipJ')?.checked && projDisplay.includes('J系列')) || false,
         });
       }
     }
@@ -4657,6 +4740,20 @@ App.performExcelImport = function() {
     this.closeModal();
     this.refreshAll();
     U.toast(`✓ 匯入完成（${added} 新增 / ${updated} 更新）`, 'success');
+    // 顯眼提醒：跨裝置同步流程
+    setTimeout(() => {
+      alert(
+        '✅ Excel 匯入完成！\n\n' +
+        '⚠️ 重要：跨裝置同步步驟\n' +
+        '──────────────────────────\n' +
+        '1️⃣ 立即按【設定 → ☁ 立即上傳到雲端】\n' +
+        '   讓雲端拿到合併後的最新版\n\n' +
+        '2️⃣ 明天到公司桌機，第一件事：\n' +
+        '   按【設定 → ⬇ 從雲端下載最新】\n' +
+        '   再開始操作，避免把舊資料覆蓋雲端\n\n' +
+        `本次匯入：${added} 新增 / ${updated} 更新`
+      );
+    }, 600);
   }, 1500);
 };
 
