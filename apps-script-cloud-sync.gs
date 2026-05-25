@@ -83,8 +83,13 @@ function _readData() {
   const sheet = _getSheet();
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
-  // A1 是 timestamp，A2 是完整 JSON
-  const json = sheet.getRange(2, 1).getValue();
+  // 從 A2 起讀所有 chunks 並組合
+  const range = sheet.getRange(2, 1, lastRow - 1, 1);
+  const values = range.getValues();
+  let json = '';
+  for (const row of values) {
+    if (row[0]) json += row[0];
+  }
   if (!json) return null;
   try {
     return JSON.parse(json);
@@ -96,13 +101,22 @@ function _readData() {
 function _writeData(data) {
   const sheet = _getSheet();
   const ts = new Date().toISOString();
-  // 清空後寫入：第 1 列為時間戳，第 2 列為完整 JSON
+  // 清空後寫入：第 1 列為 metadata，第 2 列起為 JSON chunks
   sheet.clear();
   sheet.getRange(1, 1).setValue('last_sync_ts');
   sheet.getRange(1, 2).setValue(ts);
-  sheet.getRange(2, 1).setValue(JSON.stringify(data));
-  // 為避免超出單格 50000 字元限制，分段存
-  // (這裡為簡單版，建議資料量不超過 40000 字元；超過再考慮分頁)
+
+  // 把 JSON 字串切成每塊 45000 字元（避免單格 50000 限制）
+  const json = JSON.stringify(data);
+  const CHUNK_SIZE = 45000;
+  const chunks = [];
+  for (let i = 0; i < json.length; i += CHUNK_SIZE) {
+    chunks.push([json.slice(i, i + CHUNK_SIZE)]);
+  }
+  if (chunks.length === 0) chunks.push(['']);
+  // 一次寫入到 A2:A(N+1)
+  sheet.getRange(2, 1, chunks.length, 1).setValues(chunks);
+  console.log(`寫入 ${chunks.length} 個 chunks，總 ${json.length} 字元`);
 }
 
 function _getSheet() {

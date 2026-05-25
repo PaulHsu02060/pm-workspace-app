@@ -278,7 +278,7 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .ws-day-header .date { font-family: var(--sans); font-weight: 600; font-size: 20px; display: block; color: var(--ink2); margin-bottom: 2px; }
 .ws-day-header.today .date { color: var(--sage-600); }
 .ws-day-header.today { background: var(--sage-50); border-radius: var(--r6); }
-.ws-cell { background: var(--surface2); border-radius: var(--r6); height: 50px; position: relative; overflow: hidden; }
+.ws-cell { background: var(--surface2); border-radius: var(--r6); height: 50px; position: relative; }
 .ws-lunch {
   background: repeating-linear-gradient(45deg, var(--stone-100), var(--stone-100) 6px, var(--stone-50) 6px, var(--stone-50) 12px);
   cursor: not-allowed;

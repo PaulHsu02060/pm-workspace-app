@@ -61,7 +61,7 @@ const DEFAULT_SETTINGS = {
   // ─── 雲端同步 (Cloud Sync via Google Apps Script) ───
   cloudSyncUrl: '',                      // Apps Script Web App URL
   cloudSyncToken: 'pmw-paul-2026',       // 對應 Apps Script 的 CHECK_TOKEN
-  cloudSyncEnabled: false,               // 開關
+  cloudSyncEnabled: true,                // 預設開啟（只要填了 URL 就會自動運作）
   cloudAutoSync: true,                   // 儲存後自動上傳
   cloudLastSync: '',                     // 最後同步時間（ISO）
 
@@ -2305,7 +2305,9 @@ App.openTaskInProject = function(id) {
   if (!task) { U.toast('⚠ 找不到任務', 'warning'); return; }
   // 跳到該專案頁
   this.currentProjectId = task.project;
-  this.openPage('project');
+  // 找對應的左側選單按鈕讓它高亮
+  const btn = document.querySelector(`.sb-proj[onclick*="${task.project}"]`);
+  this.showPage('project', btn);
   // 等專案頁渲染完再打開編輯 modal
   setTimeout(() => { this.openTaskModal(id); }, 100);
 };
@@ -3910,7 +3912,10 @@ App.cloudDownloadNow = function() {
       this.renderSidebar();
       // 重新渲染目前頁面（包含設定頁）
       const currentPage = this.currentPage;
-      if (currentPage) this.openPage(currentPage);
+      if (currentPage) {
+        const btn = document.querySelector(`[data-page="${currentPage}"]`);
+        this.showPage(currentPage, btn);
+      }
     }
   });
 };
