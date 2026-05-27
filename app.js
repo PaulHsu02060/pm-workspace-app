@@ -881,6 +881,18 @@ const Sync = {
         DATA.projects.unshift(jProj);
       }
 
+      // Preserve _local* overrides before removing old tasks
+      const savedOverrides = {};
+      DATA.tasks.forEach(t => {
+        if (t.synced && t.project === jProj.id && getJOverride(t.id)) {
+          savedOverrides[t.id] = {};
+          J_OVERRIDE_FIELDS.forEach(f => {
+            const key = '_local' + f.charAt(0).toUpperCase() + f.slice(1);
+            if (t[key] !== undefined) savedOverrides[t.id][key] = t[key];
+          });
+        }
+      });
+
       // Remove old synced tasks for this project
       DATA.tasks = DATA.tasks.filter(t => !(t.synced && t.project === jProj.id));
 
@@ -934,6 +946,9 @@ const Sync = {
           completedAt: realCompletedAt,
         };
         DATA.tasks.push(task);
+        if (savedOverrides[task.id]) {
+          Object.assign(task, savedOverrides[task.id]);
+        }
       }
 
       // Store sync log
