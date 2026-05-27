@@ -683,11 +683,12 @@ function generateSchedule() {
         return false;
       }
       // 未完成的任務沿用原有 4 個條件
-      if (!t.start && !t.end) {
+      const sch = getEffectiveSchedule(t);
+      if (!sch.start && !sch.end) {
         return t.urgency === 'high';
       }
-      const ts = t.start ? new Date(t.start) : null;
-      const te = t.end   ? new Date(t.end)   : null;
+      const ts = sch.start ? new Date(sch.start) : null;
+      const te = sch.end   ? new Date(sch.end)   : null;
 
       if (ts && te && te >= monday && ts <= sunday) return true;
       if (te && te < todayDate) return true;
