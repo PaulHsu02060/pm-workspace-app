@@ -2441,6 +2441,7 @@ App.openTaskModal = function(id) {
   }
 
   // Editable task
+  const sch = getEffectiveSchedule(t);
   const projectOptions = DATA.projects.filter(p => !p.synced).map(p =>
     `<option value="${p.id}" ${t.project === p.id ? 'selected' : ''}>${U.esc(p.name)}</option>`
   ).join('');
@@ -2536,8 +2537,8 @@ App.openTaskModal = function(id) {
         </div>
       </div>
       <div class="form-row">
-        <div class="form-field"><label>預計開始</label><input type="date" id="tf-start" value="${t.start || ''}"></div>
-        <div class="form-field"><label>預計完成 / Deadline</label><input type="date" id="tf-end" value="${t.end || ''}"></div>
+        <div class="form-field"><label>預計開始</label><input type="date" id="tf-start" value="${sch.start || ''}"></div>
+        <div class="form-field"><label>預計完成 / Deadline</label><input type="date" id="tf-end" value="${sch.end || ''}"></div>
       </div>
       <div class="form-row">
         <div class="form-field"><label>實際開始</label><input type="date" id="tf-actualStart" value="${t.actualStart || ''}"></div>
