@@ -779,6 +779,72 @@ function generateSchedule() {
   return { taskCount: candidates.length, scheduledCount: items.length - lockedItems.length, lockedCount: lockedItems.length };
 }
 
+// === J 系列本地時程覆蓋（抽象層） ===
+const J_OVERRIDE_FIELDS = ['start', 'end', 'plannedStart', 'plannedEnd'];
+
+function isJTask(task) {
+  if (!task || !task.synced) return false;
+  const proj = DATA.projects.find(p => p.id === task.project);
+  return proj ? proj.syncSource === 'jSheet' : false;
+}
+
+function getJOverride(taskId) {
+  const task = DATA.tasks.find(t => t.id === taskId);
+  if (!task) return null;
+  const result = {};
+  let hasAny = false;
+  J_OVERRIDE_FIELDS.forEach(f => {
+    const key = '_local' + f.charAt(0).toUpperCase() + f.slice(1);
+    if (task[key] !== undefined) {
+      result[f] = task[key];
+      hasAny = true;
+    }
+  });
+  return hasAny ? result : null;
+}
+
+function setJOverride(taskId, fields) {
+  const task = DATA.tasks.find(t => t.id === taskId);
+  if (!task || !isJTask(task)) return false;
+  Object.keys(fields).forEach(f => {
+    if (J_OVERRIDE_FIELDS.includes(f)) {
+      const key = '_local' + f.charAt(0).toUpperCase() + f.slice(1);
+      task[key] = fields[f];
+    }
+  });
+  Storage.save();
+  return true;
+}
+
+function clearJOverride(taskId) {
+  const task = DATA.tasks.find(t => t.id === taskId);
+  if (!task) return false;
+  J_OVERRIDE_FIELDS.forEach(f => {
+    const key = '_local' + f.charAt(0).toUpperCase() + f.slice(1);
+    delete task[key];
+  });
+  Storage.save();
+  return true;
+}
+
+function getAllJOverrides() {
+  return DATA.tasks
+    .filter(t => isJTask(t) && getJOverride(t.id))
+    .map(t => ({ id: t.id, name: t.name, override: getJOverride(t.id) }));
+}
+
+function getEffectiveSchedule(task) {
+  if (!task) return null;
+  const override = isJTask(task) ? getJOverride(task.id) : null;
+  return {
+    start: override?.start ?? task.start,
+    end: override?.end ?? task.end,
+    plannedStart: override?.plannedStart ?? task.plannedStart,
+    plannedEnd: override?.plannedEnd ?? task.plannedEnd,
+    hasOverride: !!override,
+  };
+}
+
 // ═══════════════════════════════════════════════════════
 //  GOOGLE SHEETS SYNC (Apps Script)
 // ═══════════════════════════════════════════════════════
