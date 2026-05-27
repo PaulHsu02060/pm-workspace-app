@@ -780,7 +780,7 @@ function generateSchedule() {
 }
 
 // === J 系列本地時程覆蓋（抽象層） ===
-const J_OVERRIDE_FIELDS = ['start', 'end', 'plannedStart', 'plannedEnd'];
+const J_OVERRIDE_FIELDS = ['start', 'end'];
 
 function isJTask(task) {
   if (!task || !task.synced) return false;
