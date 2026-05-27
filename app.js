@@ -3225,8 +3225,9 @@ App.renderReport = function() {
     }
     // 進行中/未開始：任務區間 [start, end] 與本週 [monday, sunday] 有交集
     if (t.status !== 'done' && t.status !== 'hold') {
-      const ts = t.start ? new Date(t.start) : (t.end ? new Date(t.end) : null);
-      const te = t.end   ? new Date(t.end)   : (t.start ? new Date(t.start) : null);
+      const sch = getEffectiveSchedule(t);
+      const ts = sch.start ? new Date(sch.start) : (sch.end ? new Date(sch.end) : null);
+      const te = sch.end   ? new Date(sch.end)   : (sch.start ? new Date(sch.start) : null);
       if (!ts || !te) return false; // 無日期任務不計入週報
       return te >= monday && ts <= sunday;
     }
@@ -3239,7 +3240,8 @@ App.renderReport = function() {
   const wipCnt = inWeekTasks.filter(t => t.status === 'wip').length;
   const lateCnt = inWeekTasks.filter(t => {
     if (t.status === 'done') return false;
-    return t.end && new Date(t.end) < D.today();
+    const sch = getEffectiveSchedule(t);
+    return sch.end && new Date(sch.end) < D.today();
   }).length;
   const totalHours = inWeekTasks.reduce((s, t) => s + (t.estHours || 0), 0);
   const completionRate = totalCnt > 0 ? Math.round(doneCnt / totalCnt * 100) : 0;
@@ -3317,15 +3319,16 @@ App.renderReport = function() {
             </thead>
             <tbody>
               ${tasks.map((t, i) => {
+                const sch = getEffectiveSchedule(t);
                 const prog = t.progress || (t.status === 'done' ? 100 : t.status === 'wip' ? 30 : 0);
-                const progClass = t.status === 'done' ? 'done' : (t.end && new Date(t.end) < D.today() && t.status !== 'done') ? 'late' : 'wip';
+                const progClass = t.status === 'done' ? 'done' : (sch.end && new Date(sch.end) < D.today() && t.status !== 'done') ? 'late' : 'wip';
                 let stateText = '', stateClass = 'wip';
                 if (t.status === 'done') {
                   stateClass = 'done';
                   stateText = `✓ ${t.completedAt ? D.fmt(t.completedAt, 'md') + ' 完成' : '已完成'}`;
-                } else if (t.end && new Date(t.end) < D.today()) {
+                } else if (sch.end && new Date(sch.end) < D.today()) {
                   stateClass = 'late';
-                  stateText = `⚠ 延遲 ${-D.daysBetween(D.today(), new Date(t.end)) + 1} 天`;
+                  stateText = `⚠ 延遲 ${-D.daysBetween(D.today(), new Date(sch.end)) + 1} 天`;
                 } else {
                   stateText = '進行中';
                 }
@@ -3336,8 +3339,8 @@ App.renderReport = function() {
                     ${t.desc ? `<div class="rp-task-desc">${U.esc(t.desc)}</div>` : ''}
                   </td>
                   <td>${U.esc(t.owner || '—')}</td>
-                  <td class="rp-date">${t.start ? D.fmt(t.start, 'ymdShort') : '—'}</td>
-                  <td class="rp-date">${t.end ? D.fmt(t.end, 'ymdShort') : '—'}</td>
+                  <td class="rp-date">${sch.start ? D.fmt(sch.start, 'ymdShort') : '—'}</td>
+                  <td class="rp-date">${sch.end ? D.fmt(sch.end, 'ymdShort') : '—'}</td>
                   <td><span class="rp-progress ${progClass}">${prog}%</span></td>
                   <td><span class="rp-status ${stateClass}">${stateText}</span></td>
                   <td><span class="rp-note">${U.esc(t.note || '—')}</span></td>
@@ -3404,7 +3407,8 @@ App.exportReportExcel = async function(weekKey, opts) {
     if (t.status === 'done') return '完成';
     if (t.status === 'hold') return '擱置';
     if (t.status === 'pending') return '尚未開始';
-    if (t.end && new Date(t.end) < D.today()) return '延遲';
+    const sch = getEffectiveSchedule(t);
+    if (sch.end && new Date(sch.end) < D.today()) return '延遲';
     return '進行中';
   }
 
