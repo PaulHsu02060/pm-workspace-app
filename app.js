@@ -1306,9 +1306,10 @@ App.renderDashboard = function() {
   const inWindowTasks = DATA.tasks.filter(t => {
     if (t._deleted) return false;
     if (t.status === 'done' || t.status === 'hold') return false;
-    if (!t.start && !t.end) return true;
-    const ts = t.start ? new Date(t.start) : (t.end ? new Date(t.end) : null);
-    const te = t.end   ? new Date(t.end)   : (t.start ? new Date(t.start) : null);
+    const sch = getEffectiveSchedule(t);
+    if (!sch.start && !sch.end) return true;
+    const ts = sch.start ? new Date(sch.start) : (sch.end ? new Date(sch.end) : null);
+    const te = sch.end   ? new Date(sch.end)   : (sch.start ? new Date(sch.start) : null);
     if (!ts || !te) return true;
     return te >= twoWeeksBefore && ts <= twoWeeksAfter;
   });
