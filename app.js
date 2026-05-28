@@ -1381,7 +1381,6 @@ App.renderDashboard = function() {
     <div class="stat stat-urgent" onclick="App.showUrgentModal()" title="點擊查看緊急任務">
       <div class="stat-num">${urgentTasks.length}</div>
       <div class="stat-label">緊急 ↗</div>
-      ${urgentTasks.length > 0 ? `<div class="stat-trend">點擊查看</div>` : ''}
     </div>
     <div class="stat">
       <div class="stat-num">${Math.round(totalHours)}h</div>
