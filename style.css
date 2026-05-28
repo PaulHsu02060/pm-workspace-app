@@ -273,13 +273,13 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 
 /* ─── WEEK SCHEDULE ─── */
 .week-schedule { display: grid; grid-template-columns: 64px repeat(5, 1fr); gap: 4px; }
-.ws-time-col { font-family: var(--mono); font-size: 11px; color: var(--ink3); text-align: right; padding-right: 8px; align-self: center; padding-top: 0; line-height: 44px; }
+.ws-time-col { font-family: var(--mono); font-size: 11px; color: var(--ink3); text-align: right; padding-right: 8px; align-self: center; padding-top: 0; line-height: 24px; }
 .ws-time-col.ws-time-lunch { line-height: 20px; font-size: 10px; opacity: 0.6; }
 .ws-day-header { font-family: var(--mono); font-size: 11px; color: var(--ink3); text-align: center; padding: 7px 0; font-weight: 500; }
 .ws-day-header .date { font-family: var(--sans); font-weight: 600; font-size: 20px; display: block; color: var(--ink2); margin-bottom: 2px; }
 .ws-day-header.today .date { color: var(--sage-600); }
 .ws-day-header.today { background: var(--sage-50); border-radius: var(--r6); }
-.ws-cell { background: var(--surface2); border-radius: var(--r6); height: 44px; position: relative; }
+.ws-cell { background: var(--surface2); border-radius: var(--r6); height: 24px; position: relative; }
 .ws-cell.ws-lunch {
   background: #FFFFFF;
   height: 20px;
@@ -300,8 +300,9 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
   overflow: hidden; cursor: pointer;
   border-left: 3px solid; transition: transform .1s;
 }
-.ws-event.ws-ev-task { display: flex; flex-direction: column; justify-content: center; gap: 3px; }
-.ws-event.ws-ev-task b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-event.ws-ev-task { display: flex; align-items: center; padding: 3px 8px; }
+.ws-event.ws-ev-task b { display: inline; padding-left: 0; }
+.ws-event .ws-ev-line { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 6px; padding-right: 14px; }
 .ws-event b { font-size: 12px; font-weight: 600; display: block; }
 .ws-event .ev-meta { font-size: 10.5px; color: var(--ink3); margin-top: 1px; font-family: var(--mono); }
 .ws-event:hover { transform: scale(1.02); z-index: 2; }
@@ -379,11 +380,7 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .ws-event.overdue .sync-badge { left: 14px; }
 .ws-event b { display: block; font-weight: 600; font-size: 13px; line-height: 1.2; padding-left: 10px; }
 .ws-event .ev-meta { font-size: 10px; opacity: .85; font-family: var(--mono); margin-top: 0; line-height: 1.15; padding-left: 10px; color: var(--ink3); }
-.ws-event .ws-ev-proj {
-  font-size: 11px; font-weight: 500; line-height: 1.15;
-  padding-left: 10px; padding-right: 16px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+.ws-event .ws-ev-proj { font-size: 11px; font-weight: 500; }
 
 .ws-cell.drag-over {
   background: var(--sage-100) !important;
