@@ -3145,25 +3145,25 @@ App.renderMonth = function() {
 
     // Find events on this day
     const meetings = DATA.meetings.filter(m => m.date === dateIso);
-    const taskDeadlines = DATA.tasks.filter(t => !t._deleted && getEffectiveSchedule(t).end === dateIso && t.status !== 'done');
-    const scheduleItems = (DATA.schedule.items || []).filter(it => it.date === dateIso);
+    const taskDeadlines = DATA.tasks.filter(t => !t._deleted && getEffectiveSchedule(t).end === dateIso && t.status !== 'done' && t.status !== 'hold');
 
-    let evtsHtml = '';
+    const dayEvents = [];
     // Meetings
-    for (const m of meetings.slice(0, 2)) {
-      evtsHtml += `<div class="month-evt meeting" title="${U.esc(m.title)}">${U.esc(m.startTime || '')} ${U.esc(m.title).slice(0, 6)}</div>`;
+    for (const m of meetings) {
+      dayEvents.push(`<div class="month-evt meeting" title="${U.esc(m.title)}">${U.esc(m.startTime || '')} ${U.esc(m.title).slice(0, 6)}</div>`);
     }
     // Task deadlines (urgent/preview)
-    for (const t of taskDeadlines.slice(0, 2)) {
+    for (const t of taskDeadlines) {
       const sch = getEffectiveSchedule(t);
       const days = D.daysBetween(today, new Date(sch.end));
       const isPreview = days > 7 && days <= 14;
       const cls = days <= 3 ? 'rust-evt' : isPreview ? 'preview' : 'deep';
-      evtsHtml += `<div class="month-evt ${cls}" title="${U.esc(t.name)}" onclick="event.stopPropagation(); App.openTaskModal('${t.id}')">${U.esc(t.name).slice(0, 8)}</div>`;
+      dayEvents.push(`<div class="month-evt ${cls}" title="${U.esc(t.name)}" onclick="event.stopPropagation(); App.openTaskModal('${t.id}')">${U.esc(t.name).slice(0, 8)}</div>`);
     }
-    const totalEvts = meetings.length + taskDeadlines.length;
-    if (totalEvts > 4) {
-      evtsHtml += `<div style="font-size:9px; color:var(--ink3); font-family:var(--mono);">+ ${totalEvts - 4} 個</div>`;
+    const MONTH_CELL_MAX = 6;
+    let evtsHtml = dayEvents.slice(0, MONTH_CELL_MAX).join('');
+    if (dayEvents.length > MONTH_CELL_MAX) {
+      evtsHtml += `<div style="font-size:9px; color:var(--ink3); font-family:var(--mono);">+ ${dayEvents.length - MONTH_CELL_MAX} 個</div>`;
     }
 
     return `<div class="month-cell ${c.other ? 'other-month' : ''} ${isWk ? 'weekend' : ''} ${isToday ? 'today' : ''}">
