@@ -311,6 +311,7 @@ const CloudSync = {
       localStorage.setItem(STORE.schedule, JSON.stringify(DATA.schedule));
       localStorage.setItem(STORE.settings, JSON.stringify(DATA.settings));
       localStorage.setItem(STORE.weekNotes,JSON.stringify(DATA.weekNotes));
+      console.log('[cloud] download applied → projects:', DATA.projects.length, '| _migrations:', JSON.stringify(DATA.settings._migrations));
 
       this._refreshSyncStatus();
       if (!silent) U.toast('☁ 已從雲端載入最新資料', 'success');
@@ -409,6 +410,7 @@ function ensureAllPdcaData() {
 function runMigrations() {
   DATA.settings._migrations = DATA.settings._migrations || {};
   const M = DATA.settings._migrations;
+  console.log('[mig] runMigrations called. M before:', JSON.stringify(M), '| projects:', (DATA.projects || []).length);
   let changed = false;
 
   // pdcaCleanup_v1：移除重複/不用的空殼專案 + 新增「物料標準共用化」
@@ -442,6 +444,7 @@ function runMigrations() {
 
     M.pdcaCleanup_v1 = true;
     changed = true;
+    console.log('[mig] pdcaCleanup_v1 applied. projects now:', DATA.projects.length, '| flag:', JSON.stringify(M));
   }
 
   if (changed) Storage.save();
