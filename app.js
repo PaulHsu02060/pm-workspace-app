@@ -3823,7 +3823,7 @@ App.renderPdca = function() {
     <button class="pdca-tab ${p.id === active.id ? 'active' : ''}" onclick="App.selectPdcaProject('${p.id}')">
       <span class="pdca-tab-dot" style="background:${p.color}"></span>
       <span class="pdca-tab-name">${U.esc(p.name)}${p.synced ? ' 🔗' : ''}</span>
-      <span class="pdca-tab-light">⚪</span>
+      <span class="pdca-tab-light">${this.computePdcaStatus(p).light}</span>
     </button>`).join('');
 
   host.innerHTML = `
@@ -3839,6 +3839,9 @@ App.selectPdcaProject = function(id) {
 
 App.buildPdcaPanelHtml = function(project) {
   const d = project.pdcaData || {};
+  const st = this.computePdcaStatus(project);
+  const pct = v => (v === null || v === undefined) ? '未設定' : Math.round(v) + '%';
+  const diffStr = (st.diff === null || st.diff === undefined) ? '未設定' : (st.diff >= 0 ? '+' : '') + Math.round(st.diff) + '%';
   return `
     <div class="pdca-panel">
       <div class="pdca-timeline">
@@ -3846,10 +3849,10 @@ App.buildPdcaPanelHtml = function(project) {
         <div class="pdca-field"><label>可販日</label><input type="date" value="${d.targetDate || ''}" onchange="App.updatePdcaDate('target', this.value)"></div>
       </div>
       <div class="stats-row pdca-stats">
-        <div class="stat"><div class="stat-num">未設定</div><div class="stat-label">實際進度</div></div>
-        <div class="stat"><div class="stat-num">未設定</div><div class="stat-label">預期進度</div></div>
-        <div class="stat"><div class="stat-num">未設定</div><div class="stat-label">差異</div></div>
-        <div class="stat"><div class="stat-num">⚪</div><div class="stat-label">燈號</div></div>
+        <div class="stat"><div class="stat-num">${pct(st.actual)}</div><div class="stat-label">實際進度</div></div>
+        <div class="stat"><div class="stat-num">${pct(st.expected)}</div><div class="stat-label">預期進度</div></div>
+        <div class="stat"><div class="stat-num">${diffStr}</div><div class="stat-label">差異</div></div>
+        <div class="stat"><div class="stat-num">${st.light}</div><div class="stat-label">燈號</div></div>
       </div>
       <div class="pdca-summary">
         <label>整體摘要</label>
@@ -3904,6 +3907,40 @@ App.pdcaGroupLight = function(tasks) {
   if (overdue) return '🔴';
   const done = tasks.filter(t => t.status === 'done').length;
   return (done / tasks.length > 0.5) ? '🟢' : '🟡';
+};
+
+// 專案整體 PDCA 狀態：實際進度=各大項目進度平均(排除「(未歸類)」)、預期進度=時間軸比例、燈號
+App.computePdcaStatus = function(project) {
+  const d = project.pdcaData || {};
+  const groups = this.getPdcaGroups(project.id);
+  const realNames = Object.keys(groups).filter(n => n !== '(未歸類)');
+  let actual = null;
+  if (realNames.length > 0) {
+    let sum = 0;
+    realNames.forEach(n => {
+      const tasks = groups[n];
+      const done = tasks.filter(t => t.status === 'done').length;
+      sum += tasks.length > 0 ? done / tasks.length : 0;
+    });
+    actual = (sum / realNames.length) * 100;
+  }
+  let expected = null;
+  if (d.startDate && d.targetDate) {
+    const start = new Date(d.startDate).getTime();
+    const target = new Date(d.targetDate).getTime();
+    const today = D.today().getTime();
+    if (target > start) {
+      expected = Math.max(0, Math.min(1, (today - start) / (target - start))) * 100;
+    }
+  }
+  let diff = null, light = '⚪';
+  if (actual !== null && expected !== null) {
+    diff = actual - expected;
+    if (diff >= -5) light = '🟢';
+    else if (diff > -20) light = '🟡';
+    else light = '🔴';
+  }
+  return { actual, expected, diff, light };
 };
 
 // 大項目附加資料（唯讀取值，帶預設；實際寫入走 updatePdcaGroupMeta）
