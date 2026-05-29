@@ -653,7 +653,10 @@ function generateSchedule() {
       const g = startIdxs.find(i => allSlots[i].golden);
       if (g !== undefined) best = g;
     }
-    return allSlots.slice(best, best + N);
+    const result = allSlots.slice(best, best + N);
+    console.log('[debug findRun] N=', N, 'best=', best, 'result.length=', result.length,
+      'starts=', result.map(s => s.date + ' ' + s.start), 'allSlots.length=', allSlots.length);
+    return result;
   }
 
   // Mark meeting slots taken (legacy DATA.meetings)
@@ -776,7 +779,10 @@ function generateSchedule() {
       console.warn(`[generateSchedule] 任務「${task.name}」需 ${N}h 連續空檔，本週排不下，略過`);
       continue;
     }
+    console.log('[debug]', task.name, 'N=', N, 'run.length=', run.length,
+      'before taken:', run.map(s => s.taken), 'starts:', run.map(s => s.date + ' ' + s.start), 'will set true');
     run.forEach(s => s.taken = true);
+    console.log('[debug] after taken:', run.map(s => s.taken));
     items.push({
       taskId: task.id,
       date: run[0].date,
@@ -787,6 +793,23 @@ function generateSchedule() {
       week: weekKey,
       locked: false,
     });
+  }
+
+  // [debug] 掃描重疊：同日且 [start, start+duration) 區間相交
+  const _toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  const _nm = id => (DATA.tasks.find(t => t.id === id) || {}).name;
+  for (let a = 0; a < items.length; a++) {
+    for (let b = a + 1; b < items.length; b++) {
+      const A = items[a], B = items[b];
+      if (A.date !== B.date) continue;
+      const aS = _toMin(A.start), aE = aS + (A.duration || 0);
+      const bS = _toMin(B.start), bE = bS + (B.duration || 0);
+      if (aS < bE && bS < aE) {
+        console.warn('[debug OVERLAP]', A.date,
+          (_nm(A.taskId) || '?').slice(0, 12), A.start + '+' + A.duration + 'm locked=' + !!A.locked,
+          'VS', (_nm(B.taskId) || '?').slice(0, 12), B.start + '+' + B.duration + 'm locked=' + !!B.locked);
+      }
+    }
   }
 
   DATA.schedule = { week: weekKey, items, generatedAt: new Date().toISOString() };
