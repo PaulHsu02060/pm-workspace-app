@@ -697,6 +697,7 @@ function generateSchedule() {
       if (slot.date === item.date && slot.start === item.start) slot.taken = true;
     }
   }
+  console.log('[debug LOCKED] preserved:', lockedItems.map(it => it.date + ' ' + it.start + ' dur' + it.duration + ' (' + ((DATA.tasks.find(t => t.id === it.taskId) || {}).name || '?').slice(0, 10) + ')'));
 
   // Get tasks that need scheduling for THIS WEEK (4 個條件都納入，包含同步任務)
   //   1. 預計開始日 ≤ 本週五
@@ -755,6 +756,8 @@ function generateSchedule() {
       const doneDate = task.actualEnd || (task.completedAt ? task.completedAt.slice(0, 10) : null);
       if (!doneDate) continue;
       const doneSlot = slots.find(s => s.date === doneDate && !s.taken);
+      console.log('[debug DONE]', task.name, 'doneDate=', doneDate,
+        '→ placed at', doneSlot ? (doneSlot.date + ' ' + doneSlot.start) : 'NONE (no free slot)');
       if (doneSlot) {
         doneSlot.taken = true;
         items.push({
