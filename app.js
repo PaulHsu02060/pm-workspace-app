@@ -1563,11 +1563,17 @@ App.buildWeekScheduleHtml = function(targetMonday) {
   }
 
   for (const hr of hours) {
-    const isLunch = hr === 12;
     for (const mm of [0, 30]) {
+    // 午休：12:00 改成「時間欄(靠上) + 橫貫五天的單一午休帶」，12:30 子列整列跳過
+    if (hr === 12) {
+      if (mm === 0) {
+        html += `<div class="ws-time-col ws-time-lunch">12:00</div>`;
+        html += `<div class="ws-lunch-band">☕ 午休時間</div>`;
+      }
+      continue;
+    }
     const half = mm === 0 ? '00' : '30';
-    const hideLunchHalf = hr === 12 && mm === 30;
-    html += `<div class="ws-time-col${isLunch ? ' ws-time-lunch' : ''}${hideLunchHalf ? ' ws-time-lunch-hidden' : ''}">${String(hr).padStart(2,'0')}:${half}</div>`;
+    html += `<div class="ws-time-col">${String(hr).padStart(2,'0')}:${half}</div>`;
     for (let i = 0; i < 5; i++) {
       const d = D.addDays(monday, i);
       const dateIso = D.fmt(d, 'iso');
@@ -1581,20 +1587,6 @@ App.buildWeekScheduleHtml = function(targetMonday) {
         return mh === hr;
       }) : null;
       const meetingAuto = mm === 0 ? findMeetingAt(dateIso, hr) : null;
-
-      // 12:00 是午休 — 鎖死，不能拖放、不顯示任何任務（鎖死邏輯保留）
-      if (hr === 12) {
-        if (mm === 0) {
-          // 一條 1 小時的午休線：cell 維持 24px，內層 bar absolute 52px 蓋住兩個半格
-          html += `<div class="ws-cell ws-lunch" data-date="${dateIso}" data-start="${hrStr}" title="🍽 午休時間，不可安排工作">
-            <div class="ws-lunch-bar"><span class="ws-lunch-label">🍽 午休</span></div>
-          </div>`;
-        } else {
-          // 12:30 半格：透明鎖死 cell，維持 grid 對齊、不畫第二條線
-          html += `<div class="ws-cell ws-lunch-empty" data-date="${dateIso}" data-start="${hrStr}" title="🍽 午休時間，不可安排工作"></div>`;
-        }
-        continue;
-      }
 
       // Cell is drop target
       html += `<div class="ws-cell" data-date="${dateIso}" data-start="${hrStr}" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="App.handleScheduleDrop(event, '${dateIso}', '${hrStr}')">`;
