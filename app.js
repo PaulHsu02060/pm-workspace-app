@@ -1638,7 +1638,7 @@ App.buildWeekScheduleHtml = function(targetMonday) {
             ${item.completed ? '' : 'ondragstart="App.handleScheduleDragStart(event)" ondragend="event.target.classList.remove(\'dragging\')"'}
             ondblclick="App.openTaskInProject('${task.id}')"
             title="${U.esc(tipText)}&#10;━━━━━━━━━━━━━━&#10;💡 雙擊跳到專案頁編輯">
-            ${item.completed ? '<span class="done-badge">✓</span>' : item.locked ? '<span class="lock-ico">🔒</span>' : '<span class="drag-handle">⋮⋮</span>'}
+            ${item.completed ? '<span class="done-badge">✓</span>' : item.locked ? '<span class="lock-ico">🔒</span>' : ''}
             ${isOverdue && !item.completed ? '<span class="overdue-badge">⚠</span>' : ''}
             ${task.synced ? '<span class="sync-badge">🔗</span>' : ''}
             <div class="ws-ev-line">${projName ? `<span class="ws-ev-proj" style="color:${projColor}">${U.esc(projName)}</span> ` : ''}<b>${U.esc(task.name)}</b></div>

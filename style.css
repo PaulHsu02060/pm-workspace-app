@@ -358,13 +358,6 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
   font-size: 12px; color: var(--sage-700); font-weight: 700;
 }
 .ws-event.dragging { opacity: 0.4; }
-.ws-event[draggable="true"]:hover .drag-handle { opacity: .8; }
-.ws-event .drag-handle {
-  position: absolute; top: 2px; right: 4px;
-  font-size: 10px; color: var(--ink3); opacity: 0.3;
-  cursor: grab; transition: opacity .15s; user-select: none;
-}
-.ws-event .drag-handle:active { cursor: grabbing; }
 .ws-event .lock-ico { position: absolute; top: 2px; right: 4px; font-size: 9px; opacity: .7; }
 .ws-event .overdue-badge {
   position: absolute; top: 2px; left: 4px;
