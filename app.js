@@ -388,6 +388,10 @@ function eventOccursOnDate(event, dateIso) {
 
   const freq = event.frequency || 'weekly';
 
+  if (freq === 'once') {
+    return event.startDate ? dateIso === event.startDate : false;
+  }
+
   if (freq === 'daily') {
     return true; // 每天
   }
@@ -1478,7 +1482,7 @@ App.buildWeekScheduleHtml = function(targetMonday) {
 
   // Helper: 把 frequency 轉成中文標籤
   function freqLabel(f) {
-    return ({ daily: '每天', weekly: '每週', biweekly: '隔週(一天)', triweekly: '隔兩週(一天)', 'biweekly-allday': '隔週整週每天', 'triweekly-allday': '隔兩週整週每天' })[f] || '每週';
+    return ({ once: '單次', daily: '每天', weekly: '每週', biweekly: '隔週(一天)', triweekly: '隔兩週(一天)', 'biweekly-allday': '隔週整週每天', 'triweekly-allday': '隔兩週整週每天' })[f] || '每週';
   }
 
   // Build a lookup: for each (date, hour) → which meeting?
@@ -4219,13 +4223,13 @@ App.buildRecurringMeetingsHtml = function() {
     return '<div style="padding:18px; text-align:center; color:var(--ink4); font-size:12px;">尚未設定任何定期事件</div>';
   }
   const dayLabels = ['週日','週一','週二','週三','週四','週五','週六'];
-  const freqLabels = { daily: '每天', weekly: '每週', biweekly: '隔週(一天)', triweekly: '隔兩週(一天)', 'biweekly-allday': '隔週整週每天', 'triweekly-allday': '隔兩週整週每天' };
+  const freqLabels = { once: '單次', daily: '每天', weekly: '每週', biweekly: '隔週(一天)', triweekly: '隔兩週(一天)', 'biweekly-allday': '隔週整週每天', 'triweekly-allday': '隔兩週整週每天' };
   let html = '';
   list.forEach((m, idx) => {
     const cat = m.category || 'meeting';
     const icon = cat === 'cleaning' ? '🧹' : '📅';
     const freq = m.frequency || 'weekly';
-    const dayText = freq === 'daily' ? '—' : (dayLabels[m.day] || '?');
+    const dayText = freq === 'once' ? (m.startDate || '?') : (freq === 'daily' ? '—' : (dayLabels[m.day] || '?'));
     const freqText = freqLabels[freq] || freq;
     html += `<div class="mt-row" style="display:flex; align-items:center; gap:8px; padding:9px 12px; ${idx < list.length-1 ? 'border-bottom:1px solid var(--rule);' : ''} ${m.enabled === false ? 'opacity:0.5;' : ''}">
       <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
@@ -4299,6 +4303,7 @@ App.openRecurringMeetingDialog = function(id) {
         <div class="form-field">
           <label>頻率 *</label>
           <select id="mtform-freq" onchange="App.toggleDayField()">
+            <option value="once" ${cur.frequency === 'once' ? 'selected' : ''}>單次(不重複)</option>
             <option value="daily" ${cur.frequency === 'daily' ? 'selected' : ''}>每天</option>
             <option value="weekly" ${cur.frequency === 'weekly' || !cur.frequency ? 'selected' : ''}>每週</option>
             <option value="biweekly" ${cur.frequency === 'biweekly' ? 'selected' : ''}>隔週（指定一天）</option>
@@ -4358,7 +4363,7 @@ App.toggleDayField = function() {
   const freq = document.getElementById('mtform-freq')?.value;
   const dayField = document.getElementById('mtform-day-field');
   if (!dayField) return;
-  const hideDay = freq === 'daily' || freq === 'biweekly-allday' || freq === 'triweekly-allday';
+  const hideDay = freq === 'once' || freq === 'daily' || freq === 'biweekly-allday' || freq === 'triweekly-allday';
   dayField.style.display = hideDay ? 'none' : '';
 };
 
@@ -4374,6 +4379,7 @@ App.saveRecurringMeeting = function(id) {
   const endDate = document.getElementById('mtform-endDate').value;
   if (!start || !end || start >= end) { U.toast('⚠ 時間範圍無效', 'warning'); return; }
   if (endDate && startDate && endDate < startDate) { U.toast('⚠ 結束日期不可早於開始日期', 'warning'); return; }
+  if (frequency === 'once' && !startDate) { U.toast('⚠ 單次事件請指定日期（填「開始日期」）', 'warning'); return; }
 
   DATA.settings.recurringMeetings = DATA.settings.recurringMeetings || [];
   if (id) {
