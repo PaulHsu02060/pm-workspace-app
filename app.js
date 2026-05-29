@@ -622,6 +622,40 @@ function generateSchedule() {
     return slotStart < mEnd && slotEnd > mStart;
   }
 
+  // Helper: slot 起始分鐘數（用於判斷時間相鄰）
+  function startMin(slot) {
+    const [h, m] = slot.start.split(':').map(Number);
+    return h * 60 + m;
+  }
+
+  // Helper: 找一段「同一天、時間相鄰、N 格都空」的連續 slot 區間
+  // preferGolden：深度工作優先 golden time；找不到回 null
+  function findRun(allSlots, N, preferGolden) {
+    const startIdxs = [];
+    for (let i = 0; i + N <= allSlots.length; i++) {
+      let ok = true;
+      for (let k = 0; k < N; k++) {
+        const s = allSlots[i + k];
+        if (s.taken) { ok = false; break; }
+        if (k > 0) {
+          const prev = allSlots[i + k - 1];
+          // 同天 + 時間差正好 60 分 → 自動避開午休缺口 / 跨日 / 跨工作時段
+          if (s.date !== prev.date || startMin(s) !== startMin(prev) + 60) {
+            ok = false; break;
+          }
+        }
+      }
+      if (ok) startIdxs.push(i);
+    }
+    if (startIdxs.length === 0) return null;
+    let best = startIdxs[0];
+    if (preferGolden) {
+      const g = startIdxs.find(i => allSlots[i].golden);
+      if (g !== undefined) best = g;
+    }
+    return allSlots.slice(best, best + N);
+  }
+
   // Mark meeting slots taken (legacy DATA.meetings)
   for (const meeting of DATA.meetings) {
     if (!meeting.date) continue;
@@ -705,11 +739,8 @@ function generateSchedule() {
 
   // 硬上限：每個任務本週只排 1 個時段（1h）
   // 若任務工時很長，hover tooltip 會提示需要幾週
-  const MAX_CHUNKS_PER_TASK = 1;
-  const HOURS_PER_CHUNK = 1;
-
-  // 紀錄每個任務已排的日期，用於分散到不同天
-  const taskDates = {};
+  const MAX_CHUNKS_PER_TASK = 1;   // TODO 1b: lift to allow splitting
+  const HOURS_PER_CHUNK = 1;       // TODO 1b: configurable chunk size
 
   for (const task of sorted) {
     const totalHours = parseFloat(task.estHours) || 1;
@@ -738,42 +769,24 @@ function generateSchedule() {
       continue;
     }
 
-    // 一週只排 1 個時段（1h）
-    const chunks = 1;
-    const hoursPerChunk = 1;
-
-    taskDates[task.id] = new Set();
-
-    for (let i = 0; i < chunks; i++) {
-      // 取得 slot 候選清單：
-      //   1. 排除已排過此任務的日期（分散到不同天）
-      //   2. 深度工作優先 golden time
-      let candidateSlots = slots
-        .filter(s => !s.taken && !taskDates[task.id].has(s.date));
-
-      // 若不同天 slot 都用完，才允許同天
-      if (candidateSlots.length === 0) {
-        candidateSlots = slots.filter(s => !s.taken);
-      }
-
-      if (isDeep) candidateSlots.sort((a, b) => (b.golden ? 1 : 0) - (a.golden ? 1 : 0));
-
-      const slot = candidateSlots[0];
-      if (!slot) break;
-
-      slot.taken = true;
-      taskDates[task.id].add(slot.date);
-      items.push({
-        taskId: task.id,
-        date: slot.date,
-        start: slot.start,
-        duration: 60,
-        chunk: null,
-        totalHours: totalHours,
-        week: weekKey,
-        locked: false,
-      });
+    // 1a：一個任務一張長卡，找連續 N 格空檔（N = 取整後的 estHours 小時數）
+    const N = Math.max(1, Math.round(parseFloat(task.estHours) || 1));
+    const run = findRun(slots, N, isDeep);
+    if (!run) {
+      console.warn(`[generateSchedule] 任務「${task.name}」需 ${N}h 連續空檔，本週排不下，略過`);
+      continue;
     }
+    run.forEach(s => s.taken = true);
+    items.push({
+      taskId: task.id,
+      date: run[0].date,
+      start: run[0].start,
+      duration: N * 60,
+      chunk: null,
+      totalHours: totalHours,
+      week: weekKey,
+      locked: false,
+    });
   }
 
   DATA.schedule = { week: weekKey, items, generatedAt: new Date().toISOString() };
@@ -1617,8 +1630,12 @@ App.buildWeekScheduleHtml = function(targetMonday) {
           if (task.note) tipParts.push(`備註：${task.note}`);
           const tipText = tipParts.join('\n');
 
+          // 卡片跨格：halfCells = duration/30，套用會議已驗證的高度公式（1h→52, 2h→108, 3h→164）
+          const halfCells = Math.max(2, Math.round((item.duration || 60) / 30));
+          const cardH = halfCells * 24 + (halfCells - 1) * 4;
+
           html += `<div class="ws-event ws-ev-task ${cat} ${item.locked ? 'locked' : ''} ${isOverdue ? 'overdue' : ''} ${item.completed ? 'completed' : ''}"
-            style="top:0;height:24px;"
+            style="top:0;height:${cardH}px;"
             ${item.completed ? '' : 'draggable="true"'}
             data-task-id="${task.id}"
             data-from-date="${dateIso}"
