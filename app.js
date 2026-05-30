@@ -945,6 +945,11 @@ function generateSchedule() {
         }
         return false;
       }
+      // 【需求 A】預計開始日落在本週之後、且未被釘選 → 不自動進本週（plannedStart 空值不受影響）
+      const pinned = (DATA.settings.pinnedWeekTaskIds || []).includes(t.id);
+      if (!pinned && t.plannedStart && new Date(t.plannedStart) > sunday) {
+        return false;
+      }
       // 未完成的任務沿用原有 4 個條件
       const sch = getEffectiveSchedule(t);
       if (!sch.start && !sch.end) {
