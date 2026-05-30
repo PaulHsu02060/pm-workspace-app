@@ -802,7 +802,9 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .pdca-group-hint { font-size: 11.5px; color: var(--ink3); padding: 2px 0 8px; }
 .pdca-group-meta { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 8px; }
 .pdca-group-meta label { display: flex; flex-direction: column; font-size: 11px; font-weight: 600; color: var(--ink2); gap: 4px; }
-.pdca-group-meta .pgm-recovery { flex: 1 1 100%; }
+.pdca-group-meta .pgm-recovery, .pdca-group-meta .pgm-work, .pdca-group-meta .pgm-reason { flex: 1 1 100%; }
+.pdca-group-meta .pgm-affect { flex-direction: row; align-items: center; gap: 6px; }
+.pdca-group-meta .pgm-affect input { min-width: 0; width: auto; }
 .pdca-group-meta select, .pdca-group-meta input, .pdca-group-meta textarea { font-size: 12px; font-weight: 400; border: 1px solid var(--rule); border-radius: var(--r6); padding: 5px 8px; font-family: var(--sans); color: var(--ink); background: var(--surface); outline: none; box-sizing: border-box; }
 .pdca-group-meta input { min-width: 130px; }
 .pdca-group-meta textarea { resize: vertical; width: 100%; line-height: 1.4; }
@@ -817,6 +819,8 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .pst-deadline.overdue { color: var(--terracotta); font-weight: 600; }
 .pst-status { font-size: 11px; color: var(--ink2); min-width: 48px; }
 .pst-owner { font-size: 11px; color: var(--ink3); min-width: 52px; }
+.pst-regroup { font-size: 11px; font-family: var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r6); padding: 3px 6px; max-width: 140px; outline: none; cursor: pointer; }
+.pst-regroup:focus { border-color: var(--sage-500); }
 .pst-empty { font-size: 11px; color: var(--ink3); }
 
 /* ─── TOAST ─── */

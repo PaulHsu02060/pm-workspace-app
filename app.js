@@ -4366,7 +4366,7 @@ App.updatePdcaGroupMeta = function(el, field) {
       delayDaysOverride: null, delayReason: '',
       recoveryMethod: '', recoveryDate: '', affectsLaunch: false,
     });
-  g[field] = el.value;
+  g[field] = (el.type === 'checkbox') ? el.checked : el.value;
   Storage.save();
 };
 
@@ -4377,6 +4377,20 @@ App.togglePdcaSubtasks = function(btn) {
   if (!list) return;
   const open = list.classList.toggle('open');
   btn.textContent = open ? '▴ 收合子任務' : '▾ 展開子任務';
+  // 記住展開狀態，renderPdca 重繪後由 buildPdcaGroupCard 還原
+  if (!this._pdcaOpenGroups) this._pdcaOpenGroups = new Set();
+  const key = (card.dataset.pproj || '') + '::' + (card.dataset.pgroup || '');
+  if (open) this._pdcaOpenGroups.add(key); else this._pdcaOpenGroups.delete(key);
+};
+
+// 子任務改歸類：只寫 task.pdcaGroup（歸類標籤），不碰 name/status/estHours/時程，不碰 J系列同步
+App.updatePdcaTaskGroup = function(el) {
+  const taskId = el.dataset.task;
+  const t = (DATA.tasks || []).find(x => x.id === taskId && !x._deleted);
+  if (!t) return;
+  t.pdcaGroup = el.value;   // '' = 移除歸類（歸到「(未歸類)」）
+  Storage.save();
+  this.renderPdca();
 };
 
 // 任務 modal 的 PDCA 大項目 datalist：該專案既有的大項目（pdcaGroups key ∪ 任務實際用到的）
@@ -4408,14 +4422,27 @@ App.buildPdcaGroupCard = function(project, name, tasks) {
   const isUnclassified = (name === '(未歸類)');
   const today = D.today();
 
+  // 該專案所有大項目（供子任務改歸類下拉用，排除「(未歸類)」）
+  const allGroupNames = Object.keys(this.getPdcaGroups(project.id))
+    .filter(n => n !== '(未歸類)')
+    .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+  // 展開狀態還原（togglePdcaSubtasks 記在 _pdcaOpenGroups）
+  const isOpen = !!(this._pdcaOpenGroups && this._pdcaOpenGroups.has(project.id + '::' + name));
+
   const subtasks = tasks.map(t => {
     const end = getEffectiveSchedule(t).end;
     const overdue = end && new Date(end) < today && t.status !== 'done';
+    const inGroup = t.pdcaGroup && allGroupNames.includes(t.pdcaGroup) ? t.pdcaGroup : '';
+    const regroup = `<select class="pst-regroup" data-task="${U.esc(t.id)}" onchange="App.updatePdcaTaskGroup(this)">
+      ${allGroupNames.map(g => `<option value="${U.esc(g)}" ${inGroup === g ? 'selected' : ''}>${U.esc(g)}</option>`).join('')}
+      <option value="" ${inGroup === '' ? 'selected' : ''}>— 未歸類 —</option>
+    </select>`;
     return `<div class="pdca-subtask">
       <span class="pst-name">${U.esc(t.name)}</span>
       <span class="pst-deadline ${overdue ? 'overdue' : ''}">${end ? D.fmt(end, 'ymdShort') : '—'}</span>
       <span class="pst-status">${LABELS.status[t.status] || t.status || ''}</span>
       <span class="pst-owner">${U.esc(t.owner || '')}</span>
+      ${regroup}
     </div>`;
   }).join('');
 
@@ -4436,21 +4463,39 @@ App.buildPdcaGroupCard = function(project, name, tasks) {
       <label class="pgm-owner">負責人
         <input type="text" value="${U.esc(meta.owner)}" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'owner')">
       </label>
+      <label class="pgm-work">工作內容
+        <textarea rows="2" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'workContent')">${U.esc(meta.workContent)}</textarea>
+      </label>
+      <label class="pgm-date">實際開始
+        <input type="date" value="${U.esc(meta.actualStart)}" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'actualStart')">
+      </label>
+      <label class="pgm-date">預計完成
+        <input type="date" value="${U.esc(meta.targetDate)}" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'targetDate')">
+      </label>
+      <label class="pgm-reason">落後原因
+        <textarea rows="2" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'delayReason')">${U.esc(meta.delayReason)}</textarea>
+      </label>
       <label class="pgm-recovery">補回計畫
         <textarea rows="2" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'recoveryMethod')">${U.esc(meta.recoveryMethod)}</textarea>
+      </label>
+      <label class="pgm-date">補回目標日
+        <input type="date" value="${U.esc(meta.recoveryDate)}" ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'recoveryDate')">
+      </label>
+      <label class="pgm-affect">
+        <input type="checkbox" ${meta.affectsLaunch ? 'checked' : ''} ${gAttr} onchange="App.updatePdcaGroupMeta(this, 'affectsLaunch')">影響可販日
       </label>
     </div>`;
   }
 
-  return `<div class="pdca-group">
+  return `<div class="pdca-group" data-pproj="${project.id}" data-pgroup="${U.esc(name)}">
     <div class="pdca-group-head">
       <span class="pdca-group-light">${light}</span>
       <span class="pdca-group-name">${U.esc(name)}</span>
       <span class="pdca-group-progress">${done}/${total} 完成</span>
     </div>
     ${metaHtml}
-    <button class="pdca-expand-btn" onclick="App.togglePdcaSubtasks(this)">▾ 展開子任務</button>
-    <div class="pdca-subtasks">${subtasks || '<div class="pst-empty">無子任務</div>'}</div>
+    <button class="pdca-expand-btn" onclick="App.togglePdcaSubtasks(this)">${isOpen ? '▴ 收合子任務' : '▾ 展開子任務'}</button>
+    <div class="pdca-subtasks${isOpen ? ' open' : ''}">${subtasks || '<div class="pst-empty">無子任務</div>'}</div>
   </div>`;
 };
 
