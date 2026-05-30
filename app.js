@@ -4074,37 +4074,11 @@ App.exportPdcaReport = function() {
     <div class="pr-group-label">${dot(dotIcon)}<span>${title}</span><span class="pr-group-count">${arr.length} 項</span></div>
     <div class="pr-project-cards">${arr.map(cardOf).join('')}</div>` : '';
 
-  // (b) 各專案 WBS（大項目表的燈號＝群組層 pdcaGroupLight；排除「(未歸類)」）
-  const wbsHtml = projects.map(p => {
-    const st = this.computePdcaStatus(p), d = p.pdcaData || {};
-    const groups = this.getPdcaGroups(p.id);
-    const names = Object.keys(groups).filter(n => n !== '(未歸類)').sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-    const rows = names.map(n => {
-      const meta = this.getPdcaGroupMeta(p.id, n);
-      return `<tr><td>${dot(this.pdcaGroupLight(groups[n]))}</td><td>${esc(n)}</td><td>${esc(meta.owner || '—')}</td><td>${esc(meta.recoveryMethod || '—')}</td></tr>`;
-    }).join('') || `<tr><td colspan="4" class="pr-empty">無大項目</td></tr>`;
-    return `<div class="pr-wbs-proj" style="--bar:${p.color}">
-      <div class="pr-wbs-head"><span class="pr-pcard-name">${esc(p.name)}</span><span class="pr-timeline">${esc(d.startDate || '—')} → ${esc(d.targetDate || '—')}</span></div>
-      <div class="pr-rating">${rating(st)}</div>
-      <div class="pr-summary">${esc(d.summary || '—')}</div>
-      <table class="pr-group-table"><thead><tr><th>燈號</th><th>大項目</th><th>負責</th><th>補回計畫</th></tr></thead><tbody>${rows}</tbody></table>
-    </div>`;
-  }).join('');
-
-  // (c) 延遲項目（群組層 黃+紅，紅排前；排除「(未歸類)」）
-  const delays = [];
-  projects.forEach(p => {
-    const groups = this.getPdcaGroups(p.id);
-    Object.keys(groups).filter(n => n !== '(未歸類)').forEach(n => {
-      const gl = this.pdcaGroupLight(groups[n]);
-      if (gl === '🟡' || gl === '🔴') delays.push({ p, n, meta: this.getPdcaGroupMeta(p.id, n), light: gl });
-    });
-  });
-  delays.sort((a, b) => (a.light === '🔴' ? 0 : 1) - (b.light === '🔴' ? 0 : 1));
-  const delaysHtml = delays.map(x => {
+  // 延遲卡（縱切後同專案內，不再顯示專案名 .pr-delay-proj）
+  const delayCardOf = x => {
     const m = x.meta, dd = this.pdcaDelayDays(m);
     return `<div class="pr-delay-card ${x.light === '🔴' ? 'pr-red' : 'pr-yellow'}">
-      <div class="pr-delay-head">${dot(x.light)}<b>${esc(x.n)}</b><span class="pr-delay-proj">${esc(x.p.name)}</span></div>
+      <div class="pr-delay-head">${dot(x.light)}<b>${esc(x.n)}</b></div>
       <div class="pr-delay-body">
         <div><label>工作內容</label>${esc(m.workContent || '—')}</div>
         <div><label>實際開始</label>${esc(m.actualStart || '—')}</div>
@@ -4115,7 +4089,36 @@ App.exportPdcaReport = function() {
         <div><label>補回計畫</label>${esc(m.recoveryMethod || '—')}${m.recoveryDate ? '（目標 ' + esc(m.recoveryDate) + '）' : ''}</div>
       </div>
     </div>`;
-  }).join('') || `<div class="pr-empty">目前沒有黃/紅燈大項目</div>`;
+  };
+
+  // (b) 縱切：每專案一個 .pr-project-block（WBS 表 + 該專案延遲卡）
+  const blocksHtml = projects.map(p => {
+    const st = this.computePdcaStatus(p), d = p.pdcaData || {};
+    const groups = this.getPdcaGroups(p.id);                          // 一次算，WBS + delay 共用
+    const names = Object.keys(groups).filter(n => n !== '(未歸類)').sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+
+    // WBS 表 rows
+    const rows = names.map(n => {
+      const meta = this.getPdcaGroupMeta(p.id, n);
+      return `<tr><td>${dot(this.pdcaGroupLight(groups[n]))}</td><td>${esc(n)}</td><td>${esc(meta.owner || '—')}</td><td>${esc(meta.recoveryMethod || '—')}</td></tr>`;
+    }).join('') || `<tr><td colspan="4" class="pr-empty">無大項目</td></tr>`;
+
+    // 該專案的延遲卡（只篩這個專案的黃/紅，紅排前）
+    const myDelays = names
+      .map(n => ({ p, n, meta: this.getPdcaGroupMeta(p.id, n), light: this.pdcaGroupLight(groups[n]) }))
+      .filter(x => x.light === '🟡' || x.light === '🔴')
+      .sort((a, b) => (a.light === '🔴' ? 0 : 1) - (b.light === '🔴' ? 0 : 1));
+    const delaysInner = myDelays.length
+      ? myDelays.map(delayCardOf).join('')
+      : `<div class="pr-empty">本專案無延遲項目</div>`;
+
+    return `<div class="pr-project-block" style="--bar:${p.color}">
+      <div class="pr-block-head">${dot(st.light)}<span class="pr-pcard-name">${esc(p.name)}</span><span class="pr-block-rating">${rating(st)}</span><span class="pr-timeline">${esc(d.startDate || '—')} → ${esc(d.targetDate || '—')}</span></div>
+      <div class="pr-summary">${esc(d.summary || '—')}</div>
+      <table class="pr-group-table"><thead><tr><th>燈號</th><th>大項目</th><th>負責</th><th>補回計畫</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="pr-block-delays"><div class="pr-block-subtitle">延遲項目 · 需補回計畫</div>${delaysInner}</div>
+    </div>`;
+  }).join('');
 
   const html = `<!DOCTYPE html><html lang="zh-TW"><head><meta charset="UTF-8"><title>開發部 PDCA 月報 ${today}</title>
 <style>${this._pdcaReportCss()}</style></head><body>
@@ -4135,8 +4138,7 @@ App.exportPdcaReport = function() {
     ${groupSection('🟢', '符合預期', groups.g)}
     ${groupSection('⚪', '時程未設定', groups.w)}
   </section>
-  <section class="pr-wbs"><h2 class="pr-sec-title">專案 WBS</h2>${wbsHtml}</section>
-  <section class="pr-delays"><h2 class="pr-sec-title">延遲項目 · 需補回計畫</h2>${delaysHtml}</section>
+  <section class="pr-blocks">${blocksHtml}</section>
 </div></body></html>`;
 
   window.open(URL.createObjectURL(new Blob([html], { type: 'text/html' })), '_blank');
@@ -4180,27 +4182,27 @@ body{font-family:"Microsoft JhengHei","PingFang TC",-apple-system,sans-serif;col
 .pr-pcard-stats{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:#5C5849}
 .pr-pcard-stats span{white-space:nowrap}
 
-/* 專案 WBS */
-.pr-wbs-proj{background:#fff;border:1px solid #E2DDD0;border-left:3px solid var(--bar,#C9C4B6);border-radius:0 10px 10px 0;padding:18px 20px;margin-bottom:14px}
-.pr-wbs-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
-.pr-wbs-head .pr-pcard-name{font-size:17px;font-weight:600}
+/* 專案區塊（縱切：每專案 WBS 表 + 延遲卡） */
+.pr-project-block{background:#fff;border:1px solid #E2DDD0;border-left:3px solid var(--bar,#C9C4B6);border-radius:0 10px 10px 0;padding:18px 20px;margin-bottom:14px}
+.pr-block-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.pr-block-head .pr-pcard-name{font-size:17px;font-weight:600}
+.pr-block-rating{font-size:13px;color:#5C5849}
 .pr-timeline{font-size:12px;color:#8A8577}
-.pr-rating{font-size:13px;color:#5C5849;margin:4px 0 10px}
-.pr-summary{font-size:13px;color:#5C5849;background:#F6F3EC;padding:9px 12px;border-radius:8px;margin-bottom:14px;line-height:1.6}
+.pr-summary{font-size:13px;color:#5C5849;background:#F6F3EC;padding:9px 12px;border-radius:8px;margin:10px 0 14px;line-height:1.6}
 .pr-group-table{width:100%;border-collapse:collapse;font-size:13px}
 .pr-group-table th{text-align:left;font-weight:600;color:#6B665A;padding:7px 8px;border-bottom:1px solid #D8D2C4;font-size:12px}
 .pr-group-table td{padding:8px;border-bottom:1px solid #EEEAE0;color:#3D3A32;vertical-align:top}
 .pr-group-table tr:last-child td{border-bottom:none}
 .pr-empty{color:#A8A293;font-style:italic}
 
-/* 延遲項目卡片 */
-.pr-delays{margin-bottom:20px}
+/* 延遲項目卡片（縱切：放在各專案區塊內） */
+.pr-block-delays{margin-top:14px;border-top:1px solid #EEEAE0;padding-top:12px}
+.pr-block-subtitle{font-size:13px;font-weight:600;color:#854F0B;margin-bottom:8px}
 .pr-delay-card{background:#fff;border:1px solid #E2DDD0;border-left:3px solid #C9C4B6;border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:10px}
 .pr-delay-card.pr-red{border-left-color:#E24B4A;background:#FCEFEF}
 .pr-delay-card.pr-yellow{border-left-color:#EF9F27;background:#FBF4E6}
-.pr-delay-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px}
+.pr-delay-head{display:flex;justify-content:flex-start;align-items:baseline;margin-bottom:10px;gap:10px}
 .pr-delay-head b{font-size:15px;font-weight:600}
-.pr-delay-proj{font-size:11px;color:#8A8577;white-space:nowrap}
 .pr-delay-body{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px;align-items:baseline}
 .pr-delay-body>div{display:contents}
 .pr-delay-body label{color:#8A8577;font-size:12px;white-space:nowrap}
@@ -4213,8 +4215,7 @@ body{font-family:"Microsoft JhengHei","PingFang TC",-apple-system,sans-serif;col
   body{background:#fff;padding:0;color:#000}
   .pr-print-btn{display:none}
   .pr-report{max-width:none}
-  .pr-cover,.pr-pcard,.pr-wbs-proj,.pr-delay-card{box-shadow:none;border-color:#ccc;break-inside:avoid;page-break-inside:avoid}
-  .pr-wbs,.pr-delays{page-break-before:always}
+  .pr-cover,.pr-pcard,.pr-project-block,.pr-delay-card{box-shadow:none;border-color:#ccc;break-inside:avoid;page-break-inside:avoid}
   .pr-delay-card.pr-red,.pr-delay-card.pr-yellow{background:#fff !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .pr-dot{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
