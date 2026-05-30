@@ -1693,6 +1693,7 @@ App.renderDashboard = function() {
               <p class="sr-note">附註：分數只決定「誰先排」，不決定「排幾小時」——實際排程時數另看任務的預計工時（estHours）。</p>
             </div>
           </details>
+          ${this.buildNextWeekTodoHtml()}
         </div>
       </div>
       ${memoHtml}
@@ -1995,6 +1996,47 @@ App.unpinTaskFromWeek = function(taskId) {
   generateSchedule();
   this.renderDashboard();
   U.toast('已取消釘選');
+};
+
+// 【需求 A】下週待辦：列出被守門擋掉（預計開始日在本週之後、未釘選）的未來 task + 已釘選清單
+App.buildNextWeekTodoHtml = function() {
+  const sunday = D.addDays(D.monday(), 6);
+  const pinnedIds = DATA.settings.pinnedWeekTaskIds || [];
+  const projName = id => { const p = DATA.projects.find(x => x.id === id); return p ? p.name : ''; };
+
+  // 被守門擋掉、尚未釘選的未來 task（與 generateSchedule 守門條件對齊）
+  const future = DATA.tasks
+    .filter(t => !t._deleted && t.status !== 'done' && t.status !== 'hold'
+      && t.plannedStart && new Date(t.plannedStart) > sunday
+      && !pinnedIds.includes(t.id))
+    .sort((a, b) => new Date(a.plannedStart) - new Date(b.plannedStart));
+
+  // 已釘選且仍存在的 task
+  const pinned = DATA.tasks.filter(t => !t._deleted && pinnedIds.includes(t.id));
+
+  const futureRows = future.map(t => `
+    <div class="nwt-row">
+      <span class="nwt-name">${U.esc(t.name)}</span>
+      <span class="nwt-proj">${U.esc(projName(t.project))}</span>
+      <span class="nwt-date">${D.fmt(t.plannedStart, 'ymdShort')}</span>
+      <button class="nwt-pin" data-edit onclick="App.pinTaskToWeek('${t.id}')">📌 釘選本週</button>
+    </div>`).join('') || '<div class="nwt-empty">本週無被延後的待辦</div>';
+
+  const pinnedBlock = pinned.length ? `
+    <div class="nwt-subtitle">📌 已釘選本週（${pinned.length}）</div>
+    ${pinned.map(t => `
+    <div class="nwt-row nwt-pinned">
+      <span class="nwt-name">${U.esc(t.name)}</span>
+      <span class="nwt-proj">${U.esc(projName(t.project))}</span>
+      <span class="nwt-date">${t.plannedStart ? D.fmt(t.plannedStart, 'ymdShort') : '—'}</span>
+      <button class="nwt-unpin" data-edit onclick="App.unpinTaskFromWeek('${t.id}')">取消釘選</button>
+    </div>`).join('')}` : '';
+
+  return `<div class="next-week-todo">
+    <div class="nwt-head">📅 下週待辦 <span class="nwt-hint">（預計開始日在本週之後，未自動排入本週）</span></div>
+    ${futureRows}
+    ${pinnedBlock}
+  </div>`;
 };
 
 App.buildMemoListHtml = function() {

@@ -397,6 +397,23 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .sched-rules-body li { margin: 3px 0; }
 .sched-rules-body .sr-note { color: var(--ink3); font-size: 11px; }
 
+/* ─── NEXT-WEEK TODO（下週待辦 + 釘選） ─── */
+.next-week-todo { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--rule); }
+.nwt-head { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+.nwt-hint { font-size: 10.5px; font-weight: 400; color: var(--ink3); }
+.nwt-subtitle { font-size: 11.5px; font-weight: 600; color: var(--sage-700); margin: 10px 0 6px; }
+.nwt-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 12px; border-bottom: 1px solid var(--rule); }
+.nwt-row:last-child { border-bottom: none; }
+.nwt-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.nwt-proj { font-size: 11px; color: var(--ink3); white-space: nowrap; }
+.nwt-date { font-family: var(--mono); font-size: 11px; color: var(--ink3); white-space: nowrap; }
+.nwt-pin, .nwt-unpin { font-size: 11px; border: 1px solid var(--rule); border-radius: var(--r6); padding: 3px 8px; cursor: pointer; white-space: nowrap; background: var(--surface); color: var(--sage-700); }
+.nwt-pin:hover { background: var(--sage-50); border-color: var(--sage-500); }
+.nwt-unpin { color: var(--ink3); }
+.nwt-unpin:hover { background: var(--surface2); }
+.nwt-row.nwt-pinned { background: var(--sage-50); border-radius: var(--r6); padding: 5px 8px; border-bottom: none; margin-bottom: 3px; }
+.nwt-empty { font-size: 11.5px; color: var(--ink3); font-style: italic; padding: 4px 0; }
+
 /* ─── MEMO ─── */
 .memo-board {
   background: var(--surface); border: 1px solid var(--rule);
