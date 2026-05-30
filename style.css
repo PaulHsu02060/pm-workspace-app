@@ -383,6 +383,20 @@ body.viewonly [data-edit] { opacity: .35; pointer-events: none; }
 .legend-item { display: flex; align-items: center; gap: 5px; }
 .legend-sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
 
+/* ─── SCHEDULE SORT RULES（摺疊說明，純顯示） ─── */
+.sched-rules { margin-top: 10px; font-size: 11.5px; color: var(--ink2); }
+.sched-rules summary { cursor: pointer; color: var(--sage-700); font-weight: 600; padding: 4px 0; list-style: none; }
+.sched-rules summary::-webkit-details-marker { display: none; }
+.sched-rules summary::before { content: '▸ '; }
+.sched-rules[open] summary::before { content: '▾ '; }
+.sched-rules-body { padding: 6px 2px 2px; line-height: 1.7; }
+.sched-rules-body p { margin: 0 0 6px; }
+.sched-rules-body .sr-sink { color: var(--ink); background: var(--surface2); border-left: 3px solid var(--terracotta); border-radius: var(--r6); padding: 7px 10px; }
+.sched-rules-body .sr-intro { color: var(--ink2); }
+.sched-rules-body ul { margin: 0 0 6px; padding-left: 18px; }
+.sched-rules-body li { margin: 3px 0; }
+.sched-rules-body .sr-note { color: var(--ink3); font-size: 11px; }
+
 /* ─── MEMO ─── */
 .memo-board {
   background: var(--surface); border: 1px solid var(--rule);

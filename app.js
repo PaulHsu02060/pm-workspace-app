@@ -1672,6 +1672,20 @@ App.renderDashboard = function() {
             <span class="legend-item"><span style="color:var(--sage-600);">🔗</span> 同步</span>
             <span style="margin-left:auto; font-size:10.5px;">⋮⋮ 拖曳調整 · 🔒 已鎖定</span>
           </div>
+          <details class="sched-rules">
+            <summary>📊 排序規則：任務優先序怎麼算？</summary>
+            <div class="sched-rules-body">
+              <p class="sr-sink">⬇ <b>已完成 / 擱置：強制壓到最底</b> — 完成（−9999）與擱置（−9000）會被直接壓到最底，<b>無論其他條件如何都不參與本週搶時段</b>（這條的絕對影響最大）。</p>
+              <p class="sr-intro">其餘未完成任務，系統會累加分數，分數高的排在前面、優先佔用本週時段：</p>
+              <ul>
+                <li>⏰ <b>deadline 逼近度</b>：已逾期 +500 起（每超時 1 天再 +10）· 剩 1 天內 +400 · 3 天內 +250 · 7 天內 +120 · 14 天內 +50；沒有預計完成日 −20</li>
+                <li>🔴 <b>緊急程度</b>：緊急 +300 · 普通 +100 · 不急 +0</li>
+                <li>▶ <b>進行中加分</b>：狀態為「進行中」+80</li>
+                <li>🔗 <b>同步任務微加分</b>：來自 J 系列同步 +5</li>
+              </ul>
+              <p class="sr-note">附註：分數只決定「誰先排」，不決定「排幾小時」——實際排程時數另看任務的預計工時（estHours）。</p>
+            </div>
+          </details>
         </div>
       </div>
       ${memoHtml}
